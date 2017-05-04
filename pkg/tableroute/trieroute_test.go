@@ -24,7 +24,7 @@ func (t *testRouteSuite) TestRoute(c *C) {
 func (t *testRouteSuite) testInsert(c *C, r TableRouter) {
 	var err error
 	cases := map[string]map[string][]string{
-		"?bc":  {"abc*": []string{"abc", "abc1"}, "xyz*": []string{"abc", "abc2"}},
+		"?bc":  {"abc*": {"abc", "abc1"}, "xyz*": {"abc", "abc2"}},
 		"a?c":  {"xyz*": {"abc", "abc2"}, "abc*": {"abc", "abc2"}},
 		"ab*":  {"abc*": {"abc", "abc3"}},
 		"a*":   {"": {"abc", ""}},

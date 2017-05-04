@@ -657,10 +657,10 @@ func (s *Syncer) run() error {
 			ok := false
 			sql := string(ev.Query)
 
-			log.Debugf("[query]%s", sql)
-
 			lastPos := pos
 			pos.Pos = e.Header.LogPos
+			log.Debugf("[query]%s, [next pos]%v", sql, pos)
+
 			sqls, ok, err := resolveDDLSQL(sql)
 			if err != nil {
 				if s.skipQueryEvent(sql, string(ev.Schema)) {
