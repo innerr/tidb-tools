@@ -162,8 +162,6 @@ func (c *Config) adjust() {
 	for _, rule := range c.RouteRules {
 		rule.PatternSchema = strings.ToLower(rule.PatternSchema)
 		rule.PatternTable = strings.ToLower(rule.PatternTable)
-		rule.TargetSchema = strings.ToLower(rule.TargetSchema)
-		rule.TargertTable = strings.ToLower(rule.TargertTable)
 	}
 }
 
