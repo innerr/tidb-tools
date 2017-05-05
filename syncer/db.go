@@ -45,13 +45,7 @@ const (
 	del
 	ddl
 	xid
-	gtid
 )
-
-type gtidInfo struct {
-	id   string // mysql: server uuid/mariadb Domain ID + server ID
-	gtid string
-}
 
 type job struct {
 	tp    opType
@@ -60,19 +54,24 @@ type job struct {
 	key   string
 	retry bool
 	pos   gmysql.Position
-	gtid  *gtidInfo
+	gtidSet  gmysql.GTIDSet
 }
 
-func newJob(tp opType, sql string, args []interface{}, key string, retry bool, pos gmysql.Position) *job {
-	return &job{tp: tp, sql: sql, args: args, key: key, retry: retry, pos: pos}
+func newJob(tp opType, sql string, args []interface{}, key string, retry bool, pos gmysql.Position, gtidSet gmysql.GTIDSet) *job {
+	return &job{tp: tp, sql: sql, args: args, key: key, retry: retry, pos: pos, gtidSet: gtidSet}
 }
 
-func newGTIDJob(id string, gtidStr string, pos gmysql.Position) *job {
-	return &job{tp: gtid, gtid: &gtidInfo{id: id, gtid: gtidStr}, pos: pos}
+func newXIDJob(pos gmysql.Position, gtidSet gmysql.GTIDSet) *job {
+	return &job{tp: xid, pos: pos, gtidSet: gtidSet}
 }
 
-func newXIDJob(pos gmysql.Position) *job {
-	return &job{tp: xid, pos: pos}
+func addUUIDSet(gtidSet gmysql.GTIDSet, uuidSet *gmysql.UUIDSet) {
+	mysqlGTIDSet, ok := gtidSet.(*gmysql.MysqlGTIDSet)
+	if !ok {
+		panic("only support mysql gtid")
+	}
+
+	mysqlGTIDSet.AddSet(uuidSet)
 }
 
 func isNotRotateEvent(e *replication.BinlogEvent) bool {

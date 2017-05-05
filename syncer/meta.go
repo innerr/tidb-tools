@@ -38,7 +38,7 @@ type Meta interface {
 	Load() error
 
 	// Save saves meta information.
-	Save(pos mysql.Position, id string, gtid string, force bool) error
+	Save(pos mysql.Position, gtid mysql.GTIDSet, force bool) error
 
 	// Check checks whether we should save meta.
 	Check() bool
@@ -47,7 +47,7 @@ type Meta interface {
 	Pos() mysql.Position
 
 	// GTID() returns gtid information.
-	GTID() map[string]string
+	GTID() (mysql.GTIDSet, error)
 }
 
 // LocalMeta is local meta struct.
@@ -59,12 +59,12 @@ type LocalMeta struct {
 
 	BinLogName string            `toml:"binlog-name" json:"binlog-name"`
 	BinLogPos  uint32            `toml:"binlog-pos" json:"binlog-pos"`
-	BinlogGTID map[string]string `toml:"binlog-gtid" json:"binlog-gtid"`
+	BinlogGTID string `toml:"binlog-gtid" json:"binlog-gtid"`
 }
 
 // NewLocalMeta creates a new LocalMeta.
 func NewLocalMeta(name string) *LocalMeta {
-	return &LocalMeta{name: name, BinLogPos: 4, BinlogGTID: make(map[string]string)}
+	return &LocalMeta{name: name, BinLogPos: 4}
 }
 
 // Load implements Meta.Load interface.
@@ -83,16 +83,13 @@ func (lm *LocalMeta) Load() error {
 }
 
 // Save implements Meta.Save interface.
-func (lm *LocalMeta) Save(pos mysql.Position, id string, gtid string, force bool) error {
+func (lm *LocalMeta) Save(pos mysql.Position, gtidSet mysql.GTIDSet, force bool) error {
 	lm.Lock()
 	defer lm.Unlock()
 
 	lm.BinLogName = pos.Name
 	lm.BinLogPos = pos.Pos
-
-	if len(gtid) != 0 {
-		lm.BinlogGTID[id] = gtid
-	}
+	lm.BinlogGTID = gtidSet.String()
 
 	if force {
 		var buf bytes.Buffer
@@ -124,15 +121,11 @@ func (lm *LocalMeta) Pos() mysql.Position {
 }
 
 // GTID implements Meta.GTID interface
-func (lm *LocalMeta) GTID() map[string]string {
+func (lm *LocalMeta) GTID() (mysql.GTIDSet, error) {
 	lm.RLock()
 	defer lm.RUnlock()
 
-	gtids := make(map[string]string)
-	for key, val := range lm.BinlogGTID {
-		gtids[key] = val
-	}
-	return gtids
+	return mysql.ParseMysqlGTIDSet(lm.BinlogGTID)
 }
 
 // Check implements Meta.Check interface.
@@ -149,6 +142,6 @@ func (lm *LocalMeta) Check() bool {
 
 func (lm *LocalMeta) String() string {
 	pos := lm.Pos()
-	gtids := lm.GTID()
-	return fmt.Sprintf("binlog-name = %s, binlog-pos = %d, binlog-gtid = %v", pos.Name, pos.Pos, gtids)
+	gtidSet, _ := lm.GTID()
+	return fmt.Sprintf("binlog-name = %s, binlog-pos = %d, binlog-gtid = %v", pos.Name, pos.Pos, gtidSet)
 }
