@@ -41,6 +41,8 @@ batch = 10
 
 pprof-addr = ":10081"
 
+skip-sqls = ["ALTER USER", "CREATE USER"]
+
 ##replicate-do-db priority over replicate-do-table if have same db name
 ##and we support regex expression , start with '~' declare use regex expression.
 #
@@ -52,10 +54,6 @@ pprof-addr = ":10081"
 #[[replicate-do-table]]
 #db-name ="test"
 #tbl-name = "~^a.*"
-
-# skip prefix mathched sqls
-# skip-sqls = ["^ALTER\\s+USER", "^CREATE\\s+USER"]
-
 
 [from]
 host = "127.0.0.1"

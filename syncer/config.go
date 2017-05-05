@@ -154,11 +154,11 @@ func (c Config) String() string {
 	return fmt.Sprintf(`log-level:%s log-file:%s log-rotate:%s status-addr:%s `+
 		`server-id:%d worker-count:%d batch:%d meta-file:%s `+
 		`do-tables:%v do-dbs:%v ignore-tables:%v ignore-dbs:%v `+
-		`from:%s to:%s`,
+		`from:%s to:%s skip-sqls %v`,
 		c.LogLevel, c.LogFile, c.LogRotate, c.StatusAddr,
 		c.ServerID, c.WorkerCount, c.Batch, c.Meta,
 		c.DoTables, c.DoDBs, c.IgnoreTables, c.IgnoreDBs,
-		c.From, c.To)
+		c.From, c.To, c.SkipSQLs)
 }
 
 // configFromFile loads config from file.
