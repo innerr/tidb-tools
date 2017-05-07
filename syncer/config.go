@@ -39,6 +39,7 @@ func NewConfig() *Config {
 	fs.StringVar(&cfg.LogFile, "log-file", "", "log file path")
 	fs.StringVar(&cfg.LogRotate, "log-rotate", "day", "log file rotate type, hour/day")
 	fs.BoolVar(&cfg.EnableGTID, "enable-gtid", false, "enable gtid mode")
+	fs.BoolVar(&cfg.AutoFixGTID, "auto-fix-gtid", false, "auto fix gtid while switch mysql master/slave")
 
 	return cfg
 }
@@ -91,7 +92,8 @@ type Config struct {
 	From DBConfig `toml:"from" json:"from"`
 	To   DBConfig `toml:"to" json:"to"`
 
-	EnableGTID bool `toml:"enable-gtid" json:"enable-gtid"`
+	EnableGTID  bool `toml:"enable-gtid" json:"enable-gtid"`
+	AutoFixGTID bool `toml:"auto-fix-gtid" json:"auto-fix-gtid"`
 
 	configFile   string
 	printVersion bool

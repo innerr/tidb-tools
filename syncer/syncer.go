@@ -170,6 +170,126 @@ func (s *Syncer) checkBinlogFormat() error {
 	return nil
 }
 
+// todo: use "github.com/siddontang/go-mysql/mysql".MysqlGTIDSet to represent gtid
+// assume that reset master before switching to new master, and only the new master would write
+func (s *Syncer) retrySyncGTIDs() error {
+	log.Info("start retry sync gtid")
+
+	gtids := s.meta.GTID()
+	log.Infof("old gtids %v", gtids)
+	_, newGtids, err := s.getMasterStatus()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	// find master UUID and ignore it
+	masterUUID, err := s.getServerUUID()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Infof("new master gtids %v, master uuid %s", newGtids, masterUUID)
+	// remove master gtid from currentGTIDs
+	delete(newGtids, masterUUID)
+	// remove useless gtid from
+	for uuid := range gtids {
+		if _, ok := newGtids[uuid]; !ok {
+			delete(gtids, uuid)
+		}
+	}
+	// add unknow gtid
+	for uuid, gtid := range newGtids {
+		if _, ok := gtids[uuid]; !ok {
+			gtids[uuid] = gtid
+		}
+	}
+	// save savepoint
+	pos := s.meta.Pos()
+	for uuid, gtid := range gtids {
+		s.meta.Save(pos, uuid, gtid, false)
+	}
+	// force to save in meta file
+	s.meta.Save(pos, "", "", true)
+
+	return nil
+}
+
+func (s *Syncer) getServerUUID() (string, error) {
+	var masterUUID string
+	rows, err := s.fromDB.Query(`select @@server_uuid;`)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	defer rows.Close()
+
+	// Show an example.
+	/*
+	   MySQL [test]> SHOW MASTER STATUS;
+	   +--------------------------------------+
+	   | @@server_uuid                        |
+	   +--------------------------------------+
+	   | 53ea0ed1-9bf8-11e6-8bea-64006a897c73 |
+	   +--------------------------------------+
+	*/
+	for rows.Next() {
+		err = rows.Scan(&masterUUID)
+		if err != nil {
+			return "", errors.Trace(err)
+		}
+	}
+	if rows.Err() != nil {
+		return "", errors.Trace(rows.Err())
+	}
+	return masterUUID, nil
+}
+
+func (s *Syncer) getMasterStatus() (mysql.Position, map[string]string, error) {
+	var binlogPos mysql.Position
+	newGTIDs := make(map[string]string)
+	rows, err := s.fromDB.Query(`SHOW MASTER STATUS`)
+	if err != nil {
+		return binlogPos, nil, errors.Trace(err)
+	}
+	defer rows.Close()
+
+	// Show an example.
+	/*
+		MySQL [test]> SHOW MASTER STATUS;
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+		| File      | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set                          |
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+		| ON.000001 |     4822 |              |                  | 85ab69d1-b21f-11e6-9c5e-64006a8978d2:1-46
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+	*/
+	var (
+		gtidSet    string
+		binlogName string
+		pos        uint32
+		nullPtr    interface{}
+	)
+	for rows.Next() {
+		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidSet)
+		if err != nil {
+			return binlogPos, nil, errors.Trace(err)
+		}
+
+		gtids := strings.Split(gtidSet, ",")
+		for _, gtid := range gtids {
+			sep := strings.Split(gtid, ":")
+			if len(sep) < 2 {
+				return binlogPos, nil, errors.Errorf("invalid GTID format, must UUID:interval[:interval]")
+			}
+			newGTIDs[sep[0]] = gtid
+		}
+		binlogPos = mysql.Position{
+			Name: binlogName,
+			Pos:  pos,
+		}
+	}
+	if rows.Err() != nil {
+		return binlogPos, nil, errors.Trace(rows.Err())
+	}
+	return binlogPos, newGTIDs, nil
+}
+
 func (s *Syncer) clearTables() {
 	s.tables = make(map[string]*table)
 }
@@ -537,8 +657,9 @@ func (s *Syncer) run() error {
 	pos := s.meta.Pos()
 	// while meet GTIDEvent, save previous gtid to prevent losing binlog from syncer panicing
 	var (
-		id   string
-		gtid string
+		id         string
+		gtid       string
+		needReSync = true
 	)
 	var alreadyIgnoreAllRotateEvent bool
 	for {
@@ -554,9 +675,22 @@ func (s *Syncer) run() error {
 		}
 
 		if err != nil {
+			log.Errorf("get binlog error %v", err)
+			// retry fix syncing in gtid mode
+			if needReSync && isGTIDMode && isBinlogPurgedError(err) && s.cfg.AutoFixGTID {
+				time.Sleep(retryTimeout)
+				streamer, isGTIDMode, err = s.reSyncBinlog(&cfg)
+				if err != nil {
+					return errors.Trace(err)
+				}
+				needReSync = false
+				continue
+			}
+
 			return errors.Trace(err)
 		}
-
+		// get binlog event, reset needReSync, so we can re-sync binlog while syncer meets errors next time
+		needReSync = true
 		// if gtid mode, should ignore the rotate events at head of event stream
 		if !alreadyIgnoreAllRotateEvent && isGTIDMode {
 			alreadyIgnoreAllRotateEvent = isNotRotateEvent(e)
@@ -803,7 +937,6 @@ func (s *Syncer) printStatus() {
 
 func (s *Syncer) getBinlogStreamer() (*replication.BinlogStreamer, bool, error) {
 	gtidMap := s.meta.GTID()
-
 	if s.cfg.EnableGTID && len(gtidMap) != 0 {
 		var gtids []string
 		for _, val := range gtidMap {
@@ -859,6 +992,17 @@ func (s *Syncer) recordSkipSQLsPos(op opType, pos mysql.Position) error {
 	}
 
 	return nil
+}
+
+func (s *Syncer) reSyncBinlog(cfg *replication.BinlogSyncerConfig) (*replication.BinlogStreamer, bool, error) {
+	err := s.retrySyncGTIDs()
+	if err == nil {
+		return nil, false, err
+	}
+	// close still running sync
+	s.syncer.Close()
+	s.syncer = replication.NewBinlogSyncer(cfg)
+	return s.getBinlogStreamer()
 }
 
 func (s *Syncer) startSyncByPosition() (*replication.BinlogStreamer, bool, error) {
