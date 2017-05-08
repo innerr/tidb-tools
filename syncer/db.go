@@ -543,6 +543,24 @@ func isRetryableError(err error) bool {
 	return true
 }
 
+func isAccessDeniedError(err error) bool {
+	return isError(err, tmysql.ErrSpecificAccessDenied)
+}
+
+func isError(err error, code uint16) bool {
+	// get origin error
+	var e error
+	for {
+		e = errors.Cause(err)
+		if err == e {
+			break
+		}
+		err = e
+	}
+	mysqlErr, ok := err.(*mysql.MySQLError)
+	return ok && mysqlErr.Number == code
+}
+
 func querySQL(db *sql.DB, query string) (*sql.Rows, error) {
 	var (
 		err  error
@@ -684,4 +702,88 @@ func closeDBs(dbs ...*sql.DB) {
 			log.Errorf("close db failed: %v", err)
 		}
 	}
+}
+
+func getServerUUID(db *sql.DB) (string, error) {
+	var masterUUID string
+	rows, err := db.Query(`select @@server_uuid;`)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	defer rows.Close()
+
+	// Show an example.
+	/*
+	   MySQL [test]> SHOW MASTER STATUS;
+	   +--------------------------------------+
+	   | @@server_uuid                        |
+	   +--------------------------------------+
+	   | 53ea0ed1-9bf8-11e6-8bea-64006a897c73 |
+	   +--------------------------------------+
+	*/
+	for rows.Next() {
+		err = rows.Scan(&masterUUID)
+		if err != nil {
+			return "", errors.Trace(err)
+		}
+	}
+	if rows.Err() != nil {
+		return "", errors.Trace(rows.Err())
+	}
+	return masterUUID, nil
+}
+
+func getMasterStatus(db *sql.DB) (gmysql.Position, map[string]string, error) {
+	var binlogPos gmysql.Position
+	newGTIDs := make(map[string]string)
+	rows, err := db.Query(`SHOW MASTER STATUS`)
+	if err != nil {
+		return binlogPos, nil, errors.Trace(err)
+	}
+	defer rows.Close()
+
+	// Show an example.
+	/*
+		MySQL [test]> SHOW MASTER STATUS;
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+		| File      | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set                          |
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+		| ON.000001 |     4822 |              |                  | 85ab69d1-b21f-11e6-9c5e-64006a8978d2:1-46
+		+-----------+----------+--------------+------------------+--------------------------------------------+
+	*/
+	var (
+		gtidSet    string
+		binlogName string
+		pos        uint32
+		nullPtr    interface{}
+	)
+	for rows.Next() {
+		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidSet)
+		if err != nil {
+			return binlogPos, nil, errors.Trace(err)
+		}
+
+		binlogPos = gmysql.Position{
+			Name: binlogName,
+			Pos:  pos,
+		}
+		if gtidSet == "" {
+			break
+		}
+
+		gtids := strings.Split(gtidSet, ",")
+		for _, gtid := range gtids {
+			sep := strings.Split(gtid, ":")
+			if len(sep) < 2 {
+				return binlogPos, nil, errors.Errorf("invalid GTID format:%s, must UUID:interval[:interval]", gtid)
+			}
+			newGTIDs[sep[0]] = gtid
+		}
+
+	}
+	if rows.Err() != nil {
+		return binlogPos, nil, errors.Trace(rows.Err())
+	}
+
+	return binlogPos, newGTIDs, nil
 }
