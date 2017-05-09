@@ -134,6 +134,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
 		}
 		sql += constraintKeysToSQL(constraint.Keys)
+		sql += indexOptionToSQL(constraint.Option)
 
 	case ast.ConstraintUniq, ast.ConstraintUniqKey, ast.ConstraintUniqIndex:
 		sql += "UNIQUE INDEX "
@@ -141,6 +142,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
 		}
 		sql += constraintKeysToSQL(constraint.Keys)
+		sql += indexOptionToSQL(constraint.Option)
 
 	case ast.ConstraintForeignKey:
 		sql += "FOREIGN KEY "
@@ -154,6 +156,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 	case ast.ConstraintPrimaryKey:
 		sql += "PRIMARY KEY "
 		sql += constraintKeysToSQL(constraint.Keys)
+		sql += indexOptionToSQL(constraint.Option)
 
 	case ast.ConstraintFulltext:
 		fallthrough
@@ -162,6 +165,19 @@ func constraintToSQL(constraint *ast.Constraint) string {
 		panic("not implemented yet")
 	}
 	return sql
+}
+
+// Convert constraint indexoption to sql. Currently only support comment
+func indexOptionToSQL(option *ast.IndexOption) string {
+	if option == nil {
+		return ""
+	}
+
+	if option.Comment != "" {
+		return fmt.Sprintf(" COMMENT '%s'", option.Comment)
+	}
+
+	return ""
 }
 
 func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
