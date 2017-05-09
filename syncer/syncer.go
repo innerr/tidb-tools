@@ -637,8 +637,8 @@ func (s *Syncer) run() (err error) {
 			}
 		}
 
-		binlogPos.WithLabelValues("syncer_binlog_pos").Set(float64(e.Header.LogPos))
-		binlogFile.WithLabelValues("syncer_binlog_file").Set(getBinlogIndex(s.meta.Pos().Name))
+		binlogPos.WithLabelValues("syncer").Set(float64(e.Header.LogPos))
+		binlogFile.WithLabelValues("syncer").Set(getBinlogIndex(s.meta.Pos().Name))
 
 		switch ev := e.Event.(type) {
 		case *replication.RotateEvent:
@@ -800,9 +800,7 @@ func (s *Syncer) run() (err error) {
 			}
 			log.Debugf("gtid infomation: binlog %v, gtid %s", pos, gtid)
 
-			label := fmt.Sprintf("syncer_binlog_gtid_%s", u.String())
-			log.Debugf("gauge syncer gtid label:%s, gno:%d", label, ev.GNO)
-			binlogGTID.WithLabelValues(label).Set(float64(ev.GNO))
+			binlogGTID.WithLabelValues("syncer", u.String()).Set(float64(ev.GNO))
 		}
 	}
 }
@@ -890,8 +888,8 @@ func (s *Syncer) printStatus() {
 					}
 					log.Errorf("[syncer] get master status error %s", err.Error())
 				} else {
-					binlogPos.WithLabelValues("master_binlog_pos").Set(float64(masterPos.Pos))
-					binlogFile.WithLabelValues("master_binlog_file").Set(getBinlogIndex(masterPos.Name))
+					binlogPos.WithLabelValues("master").Set(float64(masterPos.Pos))
+					binlogFile.WithLabelValues("master").Set(getBinlogIndex(masterPos.Name))
 					masterGTIDGauge(masterGTIDSet)
 				}
 			}
