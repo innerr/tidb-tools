@@ -8,7 +8,7 @@ meta = "./syncer.meta"
 worker-count = 16
 batch = 10
 
-pprof-addr = ":10081"
+status-addr = ":10081"
 
 skip-sqls = ["ALTER USER", "CREATE USER"]
 

@@ -77,6 +77,8 @@ type Syncer struct {
 	cancel context.CancelFunc
 
 	patternMap map[string]*regexp.Regexp
+
+	lackOfReplClientPrivilege bool
 }
 
 // NewSyncer creates a new Syncer.
@@ -177,7 +179,7 @@ func (s *Syncer) retrySyncGTIDs() error {
 
 	gtids := s.meta.GTID()
 	log.Infof("old gtids %v", gtids)
-	_, newGtids, err := s.getMasterStatus()
+	_, newGTIDs, err := s.getMasterStatus()
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -186,17 +188,17 @@ func (s *Syncer) retrySyncGTIDs() error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Infof("new master gtids %v, master uuid %s", newGtids, masterUUID)
+	log.Infof("new master gtids %v, master uuid %s", newGTIDs, masterUUID)
 	// remove master gtid from currentGTIDs
-	delete(newGtids, masterUUID)
+	delete(newGTIDs, masterUUID)
 	// remove useless gtid from
 	for uuid := range gtids {
-		if _, ok := newGtids[uuid]; !ok {
+		if _, ok := newGTIDs[uuid]; !ok {
 			delete(gtids, uuid)
 		}
 	}
 	// add unknow gtid
-	for uuid, gtid := range newGtids {
+	for uuid, gtid := range newGTIDs {
 		if _, ok := gtids[uuid]; !ok {
 			gtids[uuid] = gtid
 		}
@@ -213,81 +215,11 @@ func (s *Syncer) retrySyncGTIDs() error {
 }
 
 func (s *Syncer) getServerUUID() (string, error) {
-	var masterUUID string
-	rows, err := s.fromDB.Query(`select @@server_uuid;`)
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-	defer rows.Close()
-
-	// Show an example.
-	/*
-	   MySQL [test]> SHOW MASTER STATUS;
-	   +--------------------------------------+
-	   | @@server_uuid                        |
-	   +--------------------------------------+
-	   | 53ea0ed1-9bf8-11e6-8bea-64006a897c73 |
-	   +--------------------------------------+
-	*/
-	for rows.Next() {
-		err = rows.Scan(&masterUUID)
-		if err != nil {
-			return "", errors.Trace(err)
-		}
-	}
-	if rows.Err() != nil {
-		return "", errors.Trace(rows.Err())
-	}
-	return masterUUID, nil
+	return getServerUUID(s.fromDB)
 }
 
 func (s *Syncer) getMasterStatus() (mysql.Position, map[string]string, error) {
-	var binlogPos mysql.Position
-	newGTIDs := make(map[string]string)
-	rows, err := s.fromDB.Query(`SHOW MASTER STATUS`)
-	if err != nil {
-		return binlogPos, nil, errors.Trace(err)
-	}
-	defer rows.Close()
-
-	// Show an example.
-	/*
-		MySQL [test]> SHOW MASTER STATUS;
-		+-----------+----------+--------------+------------------+--------------------------------------------+
-		| File      | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set                          |
-		+-----------+----------+--------------+------------------+--------------------------------------------+
-		| ON.000001 |     4822 |              |                  | 85ab69d1-b21f-11e6-9c5e-64006a8978d2:1-46
-		+-----------+----------+--------------+------------------+--------------------------------------------+
-	*/
-	var (
-		gtidSet    string
-		binlogName string
-		pos        uint32
-		nullPtr    interface{}
-	)
-	for rows.Next() {
-		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidSet)
-		if err != nil {
-			return binlogPos, nil, errors.Trace(err)
-		}
-
-		gtids := strings.Split(gtidSet, ",")
-		for _, gtid := range gtids {
-			sep := strings.Split(gtid, ":")
-			if len(sep) < 2 {
-				return binlogPos, nil, errors.Errorf("invalid GTID format, must UUID:interval[:interval]")
-			}
-			newGTIDs[sep[0]] = gtid
-		}
-		binlogPos = mysql.Position{
-			Name: binlogName,
-			Pos:  pos,
-		}
-	}
-	if rows.Err() != nil {
-		return binlogPos, nil, errors.Trace(rows.Err())
-	}
-	return binlogPos, newGTIDs, nil
+	return getMasterStatus(s.fromDB)
 }
 
 func (s *Syncer) clearTables() {
@@ -504,6 +436,10 @@ func (s *Syncer) addJob(job *job) error {
 	case ddl:
 		// while meet ddl, we should wait all dmls finished firstly
 		s.jobWg.Wait()
+	case flush:
+		s.jobWg.Wait()
+		err := s.meta.Save(job.pos, "", "", true)
+		return errors.Trace(err)
 	}
 
 	if len(job.sql) > 0 {
@@ -520,13 +456,10 @@ func (s *Syncer) addJob(job *job) error {
 	wait := s.checkWait(job)
 	if wait {
 		s.jobWg.Wait()
-		err := s.meta.Save(job.pos, "", "", true)
-		if err != nil {
-			return errors.Trace(err)
-		}
 	}
 
-	return nil
+	err := s.meta.Save(job.pos, "", "", wait)
+	return errors.Trace(err)
 }
 
 func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
@@ -611,7 +544,15 @@ func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
 }
 
 func (s *Syncer) run() error {
-	defer s.wg.Done()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("panic error: %v", err)
+		}
+		if err := s.flushJobs(); err != nil {
+			log.Errorf("fail to finish all jobs error: %v", err)
+		}
+		s.wg.Done()
+	}()
 
 	cfg := replication.BinlogSyncerConfig{
 		ServerID: uint32(s.cfg.ServerID),
@@ -699,7 +640,8 @@ func (s *Syncer) run() error {
 			}
 		}
 
-		binlogMetaPos.Set(float64(e.Header.LogPos))
+		binlogPos.WithLabelValues("syncer_binlog_pos").Set(float64(e.Header.LogPos))
+		binlogFile.WithLabelValues("syncer_binlog_file").Set(getBinlogIndex(s.meta.Pos().Name))
 
 		switch ev := e.Event.(type) {
 		case *replication.RotateEvent:
@@ -853,6 +795,10 @@ func (s *Syncer) run() error {
 			id = u.String()
 			gtid = fmt.Sprintf("%s:1-%d", u.String(), ev.GNO)
 			log.Debugf("gtid infomation: binlog %v, gtid %s", pos, gtid)
+
+			label := fmt.Sprintf("syncer_binlog_gtid_%s", u.String())
+			log.Debugf("gauge syncer gtid label:%s, gno:%d", label, ev.GNO)
+			binlogGTID.WithLabelValues(label).Set(float64(ev.GNO))
 		}
 	}
 }
@@ -909,6 +855,12 @@ func (s *Syncer) printStatus() {
 	timer := time.NewTicker(statusTime)
 	defer timer.Stop()
 
+	var (
+		err         error
+		masterPos   mysql.Position
+		masterGTIDs map[string]string
+	)
+
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -926,8 +878,22 @@ func (s *Syncer) printStatus() {
 				totalTps = total / totalSeconds
 			}
 
-			log.Infof("[syncer]total events = %d, total tps = %d, recent tps = %d, %s.",
-				total, totalTps, tps, s.meta)
+			if !s.lackOfReplClientPrivilege {
+				masterPos, masterGTIDs, err = s.getMasterStatus()
+				if err != nil {
+					if isAccessDeniedError(err) {
+						s.lackOfReplClientPrivilege = true
+					}
+					log.Errorf("[syncer] get master status error %s", err.Error())
+				} else {
+					binlogPos.WithLabelValues("master_binlog_pos").Set(float64(masterPos.Pos))
+					binlogFile.WithLabelValues("master_binlog_file").Set(getBinlogIndex(masterPos.Name))
+					masterGTIDGauge(masterGTIDs)
+				}
+			}
+
+			log.Infof("[syncer]total events = %d, total tps = %d, recent tps = %d, master-binlog-name = %s, master-binlog-pos = %d, master-binlog-gtid=%v, %s,",
+				total, totalTps, tps, masterPos.Name, masterPos.Pos, masterGTIDs, s.meta)
 
 			s.lastCount.Set(total)
 			s.lastTime = time.Now()
@@ -987,11 +953,14 @@ func (s *Syncer) createDBs() error {
 func (s *Syncer) recordSkipSQLsPos(op opType, pos mysql.Position) error {
 	job := newJob(op, "", nil, "", false, pos)
 	err := s.addJob(job)
-	if err != nil {
-		return errors.Trace(err)
-	}
+	return errors.Trace(err)
+}
 
-	return nil
+func (s *Syncer) flushJobs() error {
+	log.Infof("flush all jobs meta = %v", s.meta)
+	job := newJob(flush, "", nil, "", false, s.meta.Pos())
+	err := s.addJob(job)
+	return errors.Trace(err)
 }
 
 func (s *Syncer) reSyncBinlog(cfg *replication.BinlogSyncerConfig) (*replication.BinlogStreamer, bool, error) {

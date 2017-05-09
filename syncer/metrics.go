@@ -14,13 +14,16 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	// For pprof
 	_ "net/http/pprof"
+	"strconv"
 
 	"github.com/ngaut/log"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/siddontang/go-mysql/mysql"
 )
 
 var (
@@ -52,12 +55,26 @@ var (
 			Help:      "total number of sql retryies",
 		}, []string{"type"})
 
-	binlogMetaPos = prometheus.NewGauge(
+	binlogPos = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "syncer",
-			Name:      "binlog_meta_pos",
-			Help:      "current binlog file pos",
-		})
+			Name:      "binlog_pos",
+			Help:      "current binlog pos",
+		}, []string{"type"})
+
+	binlogFile = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "syncer",
+			Name:      "binlog_file",
+			Help:      "current binlog file index",
+		}, []string{"type"})
+
+	binlogGTID = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "syncer",
+			Name:      "gtid",
+			Help:      "current transaction id",
+		}, []string{"server_uuid"})
 )
 
 func initStatusAndMetrics(addr string) {
@@ -65,7 +82,9 @@ func initStatusAndMetrics(addr string) {
 	prometheus.MustRegister(binlogSkippedEventsTotal)
 	prometheus.MustRegister(sqlJobsTotal)
 	prometheus.MustRegister(sqlRetriesTotal)
-	prometheus.MustRegister(binlogMetaPos)
+	prometheus.MustRegister(binlogPos)
+	prometheus.MustRegister(binlogFile)
+	prometheus.MustRegister(binlogGTID)
 
 	go func() {
 		http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
@@ -82,4 +101,36 @@ func initStatusAndMetrics(addr string) {
 			log.Fatal(err)
 		}
 	}()
+}
+
+func getBinlogIndex(filename string) float64 {
+	spt := strings.Split(filename, ".")
+	if len(spt) == 1 {
+		log.Warnf("[syncer] invalid binlog file: %s", filename)
+		return 0
+	}
+	idxStr := spt[len(spt)-1]
+
+	idx, err := strconv.ParseFloat(idxStr, 64)
+	if err != nil {
+		log.Warnf("[syncer] parse binlog index %s, error %s", filename, err.Error())
+		return 0
+	}
+	return idx
+}
+
+func masterGTIDGauge(gtids map[string]string) {
+	for uuid, gtid := range gtids {
+		set, err := mysql.ParseUUIDSet(gtid)
+		if err != nil {
+			log.Warnf("[syncer] parse uuid set error:%s, gtid:%s", err.Error(), gtid)
+			continue
+		}
+		if len(set.Intervals) == 0 {
+			continue
+		}
+		// intervals are sorted asc.
+		maxStop := set.Intervals[len(set.Intervals)-1].Stop
+		binlogGTID.WithLabelValues(fmt.Sprintf("master_binlog_gtid_%s", uuid)).Set(float64(maxStop))
+	}
 }

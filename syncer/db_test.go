@@ -19,12 +19,8 @@ import (
 	"github.com/go-sql-driver/mysql"
 	. "github.com/pingcap/check"
 	tmysql "github.com/pingcap/tidb/mysql"
+	gouuid "github.com/satori/go.uuid"
 )
-
-var _ = Suite(&testDBSuite{})
-
-type testDBSuite struct {
-}
 
 func newMysqlErr(number uint16, message string) *mysql.MySQLError {
 	return &mysql.MySQLError{
@@ -33,7 +29,7 @@ func newMysqlErr(number uint16, message string) *mysql.MySQLError {
 	}
 }
 
-func (s *testDBSuite) TestIsRetryableError(c *C) {
+func (s *testSyncerSuite) TestIsRetryableError(c *C) {
 	e := newMysqlErr(tmysql.ErrNoDB, "no db error")
 	r := isRetryableError(e)
 	c.Assert(r, IsFalse)
@@ -49,4 +45,20 @@ func (s *testDBSuite) TestIsRetryableError(c *C) {
 	ee := errors.New("driver: bad connection")
 	r = isRetryableError(ee)
 	c.Assert(r, IsTrue)
+}
+
+func (s *testSyncerSuite) TestGetMasterStatus(c *C) {
+	binlogPos, gtids, err := getMasterStatus(s.db)
+	c.Assert(err, IsNil)
+	c.Assert(binlogPos.Name, Not(Equals), "")
+	c.Assert(binlogPos.Pos, Not(Equals), 0)
+	// because master is reset.
+	c.Assert(len(gtids), Equals, 0)
+}
+
+func (s *testSyncerSuite) TestGetServerUUID(c *C) {
+	uuid, err := getServerUUID(s.db)
+	c.Assert(err, IsNil)
+	_, err = gouuid.FromString(uuid)
+	c.Assert(err, IsNil)
 }

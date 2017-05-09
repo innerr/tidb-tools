@@ -55,6 +55,13 @@ skip-sqls = ["ALTER USER", "CREATE USER"]
 #db-name ="test"
 #tbl-name = "~^a.*"
 
+# skip prefix mathched sqls
+# skip-sqls = ["^ALTER\\s+USER", "^CREATE\\s+USER"]
+
+# REPLICATION SLAVE and REPLICATION CLIENT privileges are required for the user.
+# See more at:
+# https://dev.mysql.com/doc/refman/5.7/en/privileges-provided.html#priv_replication-client
+# https://dev.mysql.com/doc/refman/5.7/en/privileges-provided.html#priv_replication-slave
 [from]
 host = "127.0.0.1"
 user = "root"
