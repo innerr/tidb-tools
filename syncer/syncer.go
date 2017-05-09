@@ -543,13 +543,13 @@ func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
 	}
 }
 
-func (s *Syncer) run() error {
+func (s *Syncer) run() (err error) {
 	defer func() {
-		if err := recover(); err != nil {
-			log.Errorf("panic error: %v", err)
+		if err1 := recover(); err1 != nil {
+			err = errors.Errorf("panic error: %v", err1)
 		}
-		if err := s.flushJobs(); err != nil {
-			log.Errorf("fail to finish all jobs error: %v", err)
+		if err1 := s.flushJobs(); err1 != nil {
+			log.Errorf("fail to finish all jobs error: %v", err1)
 		}
 		s.wg.Done()
 	}()
@@ -565,7 +565,7 @@ func (s *Syncer) run() error {
 
 	s.syncer = replication.NewBinlogSyncer(&cfg)
 
-	err := s.createDBs()
+	err = s.createDBs()
 	if err != nil {
 		return errors.Trace(err)
 	}
