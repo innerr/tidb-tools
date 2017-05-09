@@ -436,6 +436,10 @@ func (s *Syncer) addJob(job *job) error {
 	case ddl:
 		// while meet ddl, we should wait all dmls finished firstly
 		s.jobWg.Wait()
+	case flush:
+		s.jobWg.Wait()
+		err := s.meta.Save(job.pos, "", "", true)
+		return errors.Trace(err)
 	}
 
 	if len(job.sql) > 0 {
@@ -452,13 +456,10 @@ func (s *Syncer) addJob(job *job) error {
 	wait := s.checkWait(job)
 	if wait {
 		s.jobWg.Wait()
-		err := s.meta.Save(job.pos, "", "", true)
-		if err != nil {
-			return errors.Trace(err)
-		}
 	}
 
-	return nil
+	err := s.meta.Save(job.pos, "", "", wait)
+	return errors.Trace(err)
 }
 
 func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
@@ -543,7 +544,15 @@ func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
 }
 
 func (s *Syncer) run() error {
-	defer s.wg.Done()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("panic error: %v", err)
+		}
+		if err := s.flushJobs(); err != nil {
+			log.Errorf("fail to finish all jobs error: %v", err)
+		}
+		s.wg.Done()
+	}()
 
 	cfg := replication.BinlogSyncerConfig{
 		ServerID: uint32(s.cfg.ServerID),
@@ -944,11 +953,14 @@ func (s *Syncer) createDBs() error {
 func (s *Syncer) recordSkipSQLsPos(op opType, pos mysql.Position) error {
 	job := newJob(op, "", nil, "", false, pos)
 	err := s.addJob(job)
-	if err != nil {
-		return errors.Trace(err)
-	}
+	return errors.Trace(err)
+}
 
-	return nil
+func (s *Syncer) flushJobs() error {
+	log.Infof("flush all jobs meta = %v", s.meta)
+	job := newJob(flush, "", nil, "", false, s.meta.Pos())
+	err := s.addJob(job)
+	return errors.Trace(err)
 }
 
 func (s *Syncer) reSyncBinlog(cfg *replication.BinlogSyncerConfig) (*replication.BinlogStreamer, bool, error) {

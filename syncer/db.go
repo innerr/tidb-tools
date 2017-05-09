@@ -46,6 +46,7 @@ const (
 	ddl
 	xid
 	gtid
+	flush
 )
 
 type gtidInfo struct {
