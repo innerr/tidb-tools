@@ -45,35 +45,38 @@ const (
 	del
 	ddl
 	xid
-	gtid
 	flush
 )
 
-type gtidInfo struct {
-	id   string // mysql: server uuid/mariadb Domain ID + server ID
-	gtid string
-}
-
 type job struct {
-	tp    opType
-	sql   string
-	args  []interface{}
-	key   string
-	retry bool
-	pos   gmysql.Position
-	gtid  *gtidInfo
+	tp      opType
+	sql     string
+	args    []interface{}
+	key     string
+	retry   bool
+	pos     gmysql.Position
+	gtidSet GTIDSet
 }
 
-func newJob(tp opType, sql string, args []interface{}, key string, retry bool, pos gmysql.Position) *job {
-	return &job{tp: tp, sql: sql, args: args, key: key, retry: retry, pos: pos}
+func newJob(tp opType, sql string, args []interface{}, key string, retry bool, pos gmysql.Position, gtidSet GTIDSet) *job {
+	return &job{tp: tp, sql: sql, args: args, key: key, retry: retry, pos: pos, gtidSet: gtidSet}
 }
 
-func newGTIDJob(id string, gtidStr string, pos gmysql.Position) *job {
-	return &job{tp: gtid, gtid: &gtidInfo{id: id, gtid: gtidStr}, pos: pos}
+func newXIDJob(pos gmysql.Position, gtidSet GTIDSet) *job {
+	return &job{tp: xid, pos: pos, gtidSet: gtidSet}
 }
 
-func newXIDJob(pos gmysql.Position) *job {
-	return &job{tp: xid, pos: pos}
+func newFlushJob() *job {
+	return &job{tp: flush}
+}
+
+func addUUIDSet(gtidSet gmysql.GTIDSet, uuidSet *gmysql.UUIDSet) {
+	mysqlGTIDSet, ok := gtidSet.(*gmysql.MysqlGTIDSet)
+	if !ok {
+		panic("only support mysql gtid")
+	}
+
+	mysqlGTIDSet.AddSet(uuidSet)
 }
 
 func isNotRotateEvent(e *replication.BinlogEvent) bool {
@@ -657,7 +660,7 @@ LOOP:
 	}
 
 	if err != nil {
-		log.Errorf("exec sqls[%v] failed %v", sqls, errors.ErrorStack(err))
+		log.Errorf("exec sqls[%v]args[%v]failed %v", sqls, args, errors.ErrorStack(err))
 		return errors.Trace(err)
 	}
 
@@ -734,12 +737,14 @@ func getServerUUID(db *sql.DB) (string, error) {
 	return masterUUID, nil
 }
 
-func getMasterStatus(db *sql.DB) (gmysql.Position, map[string]string, error) {
-	var binlogPos gmysql.Position
-	newGTIDs := make(map[string]string)
+func getMasterStatus(db *sql.DB) (gmysql.Position, GTIDSet, error) {
+	var (
+		binlogPos gmysql.Position
+		gs        GTIDSet
+	)
 	rows, err := db.Query(`SHOW MASTER STATUS`)
 	if err != nil {
-		return binlogPos, nil, errors.Trace(err)
+		return binlogPos, gs, errors.Trace(err)
 	}
 	defer rows.Close()
 
@@ -753,38 +758,33 @@ func getMasterStatus(db *sql.DB) (gmysql.Position, map[string]string, error) {
 		+-----------+----------+--------------+------------------+--------------------------------------------+
 	*/
 	var (
-		gtidSet    string
+		gtidStr    string
 		binlogName string
 		pos        uint32
 		nullPtr    interface{}
 	)
 	for rows.Next() {
-		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidSet)
+		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidStr)
 		if err != nil {
-			return binlogPos, nil, errors.Trace(err)
+			return binlogPos, gs, errors.Trace(err)
 		}
 
 		binlogPos = gmysql.Position{
 			Name: binlogName,
 			Pos:  pos,
 		}
-		if gtidSet == "" {
+		if gtidStr == "" {
 			break
 		}
 
-		gtids := strings.Split(gtidSet, ",")
-		for _, gtid := range gtids {
-			sep := strings.Split(gtid, ":")
-			if len(sep) < 2 {
-				return binlogPos, nil, errors.Errorf("invalid GTID format:%s, must UUID:interval[:interval]", gtid)
-			}
-			newGTIDs[sep[0]] = gtid
+		gs, err = parseGTIDSet(gtidStr)
+		if err != nil {
+			return binlogPos, gs, errors.Trace(err)
 		}
-
 	}
 	if rows.Err() != nil {
-		return binlogPos, nil, errors.Trace(rows.Err())
+		return binlogPos, gs, errors.Trace(rows.Err())
 	}
 
-	return binlogPos, newGTIDs, nil
+	return binlogPos, gs, nil
 }
