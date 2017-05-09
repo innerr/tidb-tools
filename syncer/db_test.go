@@ -103,6 +103,8 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar change a b varchar(255), change c d varchar(255) first, change e f varchar(255) after g", nil, false, true}, // tidb not support change column  FIRST | AFTER column
 		{"ALTER TABLE bar change a b varchar(255), change c d varchar(255)", []string{"ALTER TABLE `bar` CHANGE COLUMN `a` `b` varchar(255)", "ALTER TABLE `bar` CHANGE COLUMN `c` `d` varchar(255)"}, true, false},
 		{"ALTER TABLE bar modify a varchar(255), modify b varchar(255) first, modify c varchar(255) after d", []string{"ALTER TABLE `bar` MODIFY COLUMN `a` varchar(255)", "ALTER TABLE `bar` MODIFY COLUMN `b` varchar(255) FIRST", "ALTER TABLE `bar` MODIFY COLUMN `c` varchar(255) AFTER `d`"}, true, false},
+		{"ALTER TABLE bar drop a, drop b", []string{"ALTER TABLE `bar` DROP COLUMN `a`", "ALTER TABLE `bar` DROP COLUMN `b`"}, true, false},
+		{"ALTER TABLE bar DROP PRIMARY KEY, drop a", []string{"ALTER TABLE `bar` DROP PRIMARY KEY", "ALTER TABLE `bar` DROP COLUMN `a`"}, true, false},
 		// {},
 	}
 

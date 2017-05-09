@@ -247,7 +247,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 		}
 
 	case ast.AlterTableDropPrimaryKey:
-		fallthrough
+		sql += "DROP PRIMARY KEY"
 
 	default:
 	}
