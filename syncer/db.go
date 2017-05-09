@@ -70,15 +70,6 @@ func newFlushJob() *job {
 	return &job{tp: flush}
 }
 
-func addUUIDSet(gtidSet gmysql.GTIDSet, uuidSet *gmysql.UUIDSet) {
-	mysqlGTIDSet, ok := gtidSet.(*gmysql.MysqlGTIDSet)
-	if !ok {
-		panic("only support mysql gtid")
-	}
-
-	mysqlGTIDSet.AddSet(uuidSet)
-}
-
 func isNotRotateEvent(e *replication.BinlogEvent) bool {
 	switch e.Event.(type) {
 	case *replication.RotateEvent:
@@ -758,13 +749,13 @@ func getMasterStatus(db *sql.DB) (gmysql.Position, GTIDSet, error) {
 		+-----------+----------+--------------+------------------+--------------------------------------------+
 	*/
 	var (
-		gtidStr    string
+		gtid       string
 		binlogName string
 		pos        uint32
 		nullPtr    interface{}
 	)
 	for rows.Next() {
-		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtidStr)
+		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtid)
 		if err != nil {
 			return binlogPos, gs, errors.Trace(err)
 		}
@@ -773,11 +764,11 @@ func getMasterStatus(db *sql.DB) (gmysql.Position, GTIDSet, error) {
 			Name: binlogName,
 			Pos:  pos,
 		}
-		if gtidStr == "" {
+		if gtid == "" {
 			break
 		}
 
-		gs, err = parseGTIDSet(gtidStr)
+		gs, err = parseGTIDSet(gtid)
 		if err != nil {
 			return binlogPos, gs, errors.Trace(err)
 		}

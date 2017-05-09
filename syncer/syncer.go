@@ -783,7 +783,7 @@ func (s *Syncer) run() (err error) {
 			}
 		case *replication.XIDEvent:
 			pos.Pos = e.Header.LogPos
-			addUUIDSet(gs, uuidSet)
+			gs.AddSet(uuidSet)
 			job := newXIDJob(pos, gs)
 			s.addJob(job)
 		case *replication.GTIDEvent:

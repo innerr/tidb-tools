@@ -95,7 +95,7 @@ func (lm *LocalMeta) Save(pos mysql.Position, gs GTIDSet, force bool) error {
 	lm.BinlogGTID = gs.String()
 
 	if force {
-		lm.Flush()
+		return lm.Flush()
 	}
 	return nil
 }
