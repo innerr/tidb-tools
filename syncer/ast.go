@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/ast"
 	"github.com/pingcap/tidb/util/types"
 )
@@ -167,6 +168,21 @@ func constraintToSQL(constraint *ast.Constraint) string {
 	return sql
 }
 
+func positionToSQL(pos *ast.ColumnPosition) string {
+	var sql string
+	switch pos.Tp {
+	case ast.ColumnPositionNone:
+	case ast.ColumnPositionFirst:
+		sql = " FIRST"
+	case ast.ColumnPositionAfter:
+		colName := pos.RelativeColumn.Name.O
+		sql = fmt.Sprintf(" AFTER `%s`", escapeName(colName))
+	default:
+		panic("unreachable")
+	}
+	return sql
+}
+
 // Convert constraint indexoption to sql. Currently only support comment.
 func indexOptionToSQL(option *ast.IndexOption) string {
 	if option == nil {
@@ -186,16 +202,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 	case ast.AlterTableAddColumn:
 		sql += fmt.Sprintf("ADD COLUMN %s", columnDefToSQL(spec.NewColumn))
 		if spec.Position != nil {
-			switch spec.Position.Tp {
-			case ast.ColumnPositionNone:
-			case ast.ColumnPositionFirst:
-				sql += " FIRST"
-			case ast.ColumnPositionAfter:
-				colName := spec.Position.RelativeColumn.Name.O
-				sql += fmt.Sprintf(" AFTER `%s`", escapeName(colName))
-			default:
-				panic("unreachable")
-			}
+			sql += positionToSQL(spec.Position)
 		}
 
 	case ast.AlterTableDropColumn:
@@ -217,7 +224,11 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 	case ast.AlterTableModifyColumn:
 		sql += "MODIFY COLUMN "
 		sql += columnDefToSQL(spec.NewColumn)
+		if spec.Position != nil {
+			sql += positionToSQL(spec.Position)
+		}
 
+	// FIXME: should support [FIRST|AFTER col_name], but tidb parser not support this currently.
 	case ast.AlterTableChangeColumn:
 		sql += "CHANGE COLUMN "
 		sql += fmt.Sprintf("%s %s",
@@ -251,5 +262,7 @@ func alterTableStmtToSQL(stmt *ast.AlterTableStmt) string {
 		}
 		sql += alterTableSpecToSQL(spec)
 	}
+
+	log.Debugf("alter table stmt to sql:%s", sql)
 	return sql
 }
