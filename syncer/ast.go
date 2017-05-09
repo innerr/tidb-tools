@@ -116,10 +116,10 @@ func constraintKeysToSQL(keys []*ast.IndexColName) string {
 func referenceDefToSQL(refer *ast.ReferenceDef) string {
 	sql := fmt.Sprintf("%s ", tableNameToSQL(refer.Table))
 	sql += constraintKeysToSQL(refer.IndexColNames)
-	if refer.OnDelete != nil {
+	if refer.OnDelete != nil && refer.OnDelete.ReferOpt != ast.ReferOptionNoOption {
 		sql += fmt.Sprintf(" ON DELETE %s", refer.OnDelete.ReferOpt)
 	}
-	if refer.OnUpdate != nil {
+	if refer.OnUpdate != nil && refer.OnUpdate.ReferOpt != ast.ReferOptionNoOption {
 		sql += fmt.Sprintf(" ON UPDATE %s", refer.OnUpdate.ReferOpt)
 	}
 	return sql
@@ -151,7 +151,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 		}
 		sql += constraintKeysToSQL(constraint.Keys)
 		sql += " REFERENCES "
-		panic("not implemented yet")
+		sql += referenceDefToSQL(constraint.Refer)
 
 	case ast.ConstraintPrimaryKey:
 		sql += "PRIMARY KEY "
@@ -167,7 +167,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 	return sql
 }
 
-// Convert constraint indexoption to sql. Currently only support comment
+// Convert constraint indexoption to sql. Currently only support comment.
 func indexOptionToSQL(option *ast.IndexOption) string {
 	if option == nil {
 		return ""
