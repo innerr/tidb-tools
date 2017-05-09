@@ -173,8 +173,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 			switch spec.Position.Tp {
 			case ast.ColumnPositionNone:
 			case ast.ColumnPositionFirst:
-				colName := spec.Position.RelativeColumn.Name.O
-				sql += fmt.Sprintf(" FIRST `%s`", escapeName(colName))
+				sql += " FIRST"
 			case ast.ColumnPositionAfter:
 				colName := spec.Position.RelativeColumn.Name.O
 				sql += fmt.Sprintf(" AFTER `%s`", escapeName(colName))
