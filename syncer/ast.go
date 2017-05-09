@@ -227,8 +227,17 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 	case ast.AlterTableRenameTable:
 		sql += fmt.Sprintf("RENAME TO %s", tableNameToSQL(spec.NewTable))
 
+	case ast.AlterTableAlterColumn:
+		sql += fmt.Sprintf("ALTER COLUMN %s ", columnNameToSQL(spec.NewColumn.Name))
+		if options := spec.NewColumn.Options; options != nil {
+			sql += fmt.Sprintf("SET DEFAULT %v", options[0].Expr.GetValue())
+		} else {
+			sql += "DROP DEFAULT"
+		}
+
 	case ast.AlterTableDropPrimaryKey:
 		fallthrough
+
 	default:
 	}
 	return sql
