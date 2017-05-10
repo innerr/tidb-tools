@@ -596,10 +596,10 @@ func (s *Syncer) run() (err error) {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	var uuidSet *mysql.UUIDSet
-	// while meet GTIDEvent, save previous gtid to prevent losing binlog from syncer panicing
-	var alreadyIgnoreAllRotateEvent bool
-	var tryReSync = true
+	var (
+		uuidSet   *mysql.UUIDSet
+		tryReSync = true
+	)
 	for {
 		ctx, cancel := context.WithTimeout(s.ctx, eventTimeout)
 		e, err := streamer.GetEvent(ctx)
@@ -614,7 +614,7 @@ func (s *Syncer) run() (err error) {
 
 		if err != nil {
 			log.Errorf("get binlog error %v", err)
-			// retry fix syncing in gtid mode
+			// try to re-sync in gtid mode
 			if tryReSync && isGTIDMode && isBinlogPurgedError(err) && s.cfg.AutoFixGTID {
 				time.Sleep(retryTimeout)
 				streamer, isGTIDMode, err = s.reSyncBinlog(&cfg)
@@ -627,16 +627,8 @@ func (s *Syncer) run() (err error) {
 
 			return errors.Trace(err)
 		}
-		// get binlog event, reset needReSync, so we can re-sync binlog while syncer meets errors next time
+		// get binlog event, reset tryReSync, so we can re-sync binlog while syncer meets errors next time
 		tryReSync = true
-		// if gtid mode, should ignore the rotate events at head of event stream
-		if !alreadyIgnoreAllRotateEvent && isGTIDMode {
-			alreadyIgnoreAllRotateEvent = isNotRotateEvent(e)
-			if !alreadyIgnoreAllRotateEvent {
-				continue
-			}
-		}
-
 		binlogPos.WithLabelValues("syncer").Set(float64(e.Header.LogPos))
 		binlogFile.WithLabelValues("syncer").Set(getBinlogIndex(s.meta.Pos().Name))
 
@@ -644,9 +636,15 @@ func (s *Syncer) run() (err error) {
 		case *replication.RotateEvent:
 			binlogEventsTotal.WithLabelValues("rotate").Inc()
 
-			pos.Name = string(ev.NextLogName)
-			pos.Pos = uint32(ev.Position)
+			currentPos := mysql.Position{
+				Name: string(ev.NextLogName),
+				Pos:  uint32(ev.Position),
+			}
+			if compareBinlogPos(currentPos, pos) <= 0 {
+				continue
+			}
 
+			pos = currentPos
 			err = s.meta.Save(pos, gs, true)
 			if err != nil {
 				return errors.Trace(err)

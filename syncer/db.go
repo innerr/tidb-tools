@@ -34,50 +34,7 @@ import (
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/terror"
 	gmysql "github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/replication"
 )
-
-type opType byte
-
-const (
-	insert = iota + 1
-	update
-	del
-	ddl
-	xid
-	flush
-)
-
-type job struct {
-	tp      opType
-	sql     string
-	args    []interface{}
-	key     string
-	retry   bool
-	pos     gmysql.Position
-	gtidSet GTIDSet
-}
-
-func newJob(tp opType, sql string, args []interface{}, key string, retry bool, pos gmysql.Position, gtidSet GTIDSet) *job {
-	return &job{tp: tp, sql: sql, args: args, key: key, retry: retry, pos: pos, gtidSet: gtidSet}
-}
-
-func newXIDJob(pos gmysql.Position, gtidSet GTIDSet) *job {
-	return &job{tp: xid, pos: pos, gtidSet: gtidSet}
-}
-
-func newFlushJob() *job {
-	return &job{tp: flush}
-}
-
-func isNotRotateEvent(e *replication.BinlogEvent) bool {
-	switch e.Event.(type) {
-	case *replication.RotateEvent:
-		return false
-	default:
-		return true
-	}
-}
 
 type column struct {
 	idx      int
@@ -392,18 +349,6 @@ func ignoreDDLError(err error) bool {
 	}
 }
 
-func isBinlogPurgedError(err error) bool {
-	mysqlErr, ok := errors.Cause(err).(*gmysql.MyError)
-	if !ok {
-		return false
-	}
-	errCode := terror.ErrCode(mysqlErr.Code)
-	if errCode == gmysql.ER_MASTER_FATAL_ERROR_READING_BINLOG {
-		return true
-	}
-	return false
-}
-
 func isDDLSQL(sql string) (bool, error) {
 	stmt, err := parser.New().ParseOneStmt(sql, "", "")
 	if err != nil {
@@ -536,6 +481,18 @@ func isRetryableError(err error) bool {
 	}
 
 	return true
+}
+
+func isBinlogPurgedError(err error) bool {
+	mysqlErr, ok := errors.Cause(err).(*gmysql.MyError)
+	if !ok {
+		return false
+	}
+	errCode := terror.ErrCode(mysqlErr.Code)
+	if errCode == gmysql.ER_MASTER_FATAL_ERROR_READING_BINLOG {
+		return true
+	}
+	return false
 }
 
 func isAccessDeniedError(err error) bool {

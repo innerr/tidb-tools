@@ -120,7 +120,7 @@ func getBinlogIndex(filename string) float64 {
 func masterGTIDGauge(gtidSet GTIDSet) {
 	for uuid, uuidSet := range gtidSet.all() {
 		length := uuidSet.Intervals.Len()
-		maxStop := uuidSet.Intervals[length-1].Stop
-		binlogGTID.WithLabelValues("master", uuid).Set(float64(maxStop))
+		stop := uuidSet.Intervals[length-1].Stop
+		binlogGTID.WithLabelValues("master", uuid).Set(float64(stop))
 	}
 }
