@@ -46,7 +46,7 @@ func defaultValueToSQL(opt *ast.ColumnOption) string {
 		sql += formatStringValue(datum.GetString())
 
 	default:
-		panic("Not implemented. Please summit the bug.")
+		panic("not implemented yet")
 	}
 
 	return sql
