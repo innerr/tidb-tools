@@ -696,6 +696,11 @@ func getMasterStatus(db *sql.DB) (gmysql.Position, GTIDSet, error) {
 	}
 	defer rows.Close()
 
+	rowColumns, err := rows.Columns()
+	if err != nil {
+		return binlogPos, gs, errors.Trace(err)
+	}
+
 	// Show an example.
 	/*
 		MySQL [test]> SHOW MASTER STATUS;
@@ -712,7 +717,11 @@ func getMasterStatus(db *sql.DB) (gmysql.Position, GTIDSet, error) {
 		nullPtr    interface{}
 	)
 	for rows.Next() {
-		err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtid)
+		if len(rowColumns) == 5 {
+			err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr, &gtid)
+		} else {
+			err = rows.Scan(&binlogName, &pos, &nullPtr, &nullPtr)
+		}
 		if err != nil {
 			return binlogPos, gs, errors.Trace(err)
 		}
