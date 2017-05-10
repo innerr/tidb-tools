@@ -15,12 +15,49 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/ast"
 	"github.com/pingcap/tidb/util/types"
 )
+
+func defaultValueToSQL(opt *ast.ColumnOption) string {
+	if opt.Tp != ast.ColumnOptionDefaultValue {
+		panic("unreachable")
+	}
+
+	sql := " DEFAULT "
+	datum := opt.Expr.GetDatum()
+	switch datum.Kind() {
+	case types.KindNull:
+		expr, ok := opt.Expr.(*ast.FuncCallExpr)
+		if ok {
+			sql += expr.FnName.O
+		} else {
+			sql += "NULL"
+		}
+
+	case types.KindInt64:
+		sql += strconv.FormatInt(datum.GetInt64(), 10)
+
+	case types.KindString:
+		sql += formatStringValue(datum.GetString())
+
+	default:
+		panic("Not implemented. Please summit the bug.")
+	}
+
+	return sql
+}
+
+func formatStringValue(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return fmt.Sprintf("'%s'", s)
+}
 
 // FIXME: tidb's AST is error-some to handle more condition
 func columnDefToSQL(colDef *ast.ColumnDef) string {
@@ -33,8 +70,7 @@ func columnDefToSQL(colDef *ast.ColumnDef) string {
 		case ast.ColumnOptionNull:
 			sql += " NULL"
 		case ast.ColumnOptionDefaultValue:
-			sql += " DEFAULT (TODO)"
-			panic("not implemented yet")
+			sql += defaultValueToSQL(opt)
 		case ast.ColumnOptionAutoIncrement:
 			sql += " AUTO_INCREMENT"
 		case ast.ColumnOptionUniqKey:

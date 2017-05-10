@@ -15,18 +15,12 @@ package main
 
 import (
 	"errors"
-	"testing"
 
 	"github.com/go-sql-driver/mysql"
 	. "github.com/pingcap/check"
 	tmysql "github.com/pingcap/tidb/mysql"
 	gouuid "github.com/satori/go.uuid"
 )
-
-//tmp use
-func TestSuite1(t *testing.T) {
-	TestingT(t)
-}
 
 func newMysqlErr(number uint16, message string) *mysql.MySQLError {
 	return &mysql.MySQLError{
@@ -82,7 +76,7 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"rename table t1 to t2", []string{"rename table t1 to t2"}, true, false}, // no change
 		{"rename table `t1` to `t2`, `t3` to `t4`", nil, false, true},             //parser not supported two ddls currently.
 		{"alter table `bar` add column `id` int not null", []string{"alter table `bar` add column `id` int not null"}, true, false},
-		// {"alter table `bar` add column `id1` int not null, add column `id2` int not null default 1", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL DEFAULT 1"}, true, false},
+		{"alter table `bar` add column `id1` int not null, add column `id2` int not null default 1", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL DEFAULT 1"}, true, false},
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null COMMENT 'this is id2'", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL COMMENT 'this is id2'"}, true, false},
 		{"alter table `bar` add column `id2` int not null first", []string{"alter table `bar` add column `id2` int not null first"}, true, false},
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null first", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL FIRST"}, true, false},
@@ -120,7 +114,18 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar add index (id), character set utf8 collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8' COLLATE = 'utf8_bin'"}, true, false},
 		{"ALTER TABLE bar add index (id), character set utf8", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8'"}, true, false},
 		{"ALTER TABLE bar add index (id), collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT COLLATE = 'utf8_bin'"}, true, false},
+
 		{"ALTER TABLE bar add c1 timestamp not null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp null default null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+
+		{"ALTER TABLE bar add c1 timestamp null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp not null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+
+		{"ALTER TABLE bar add c1 varchar(10) DEFAULT '' NOT NULL, add c2 varchar(10) NOT NULL DEFAULT 'foo'", []string{"ALTER TABLE `bar` ADD COLUMN `c1` varchar(10) DEFAULT '' NOT NULL", "ALTER TABLE `bar` ADD COLUMN `c2` varchar(10) NOT NULL DEFAULT 'foo'"}, true, false},
+		{"ALTER TABLE bar add c1 int not null default 100000000000000, add c2 smallint not null default '100000000000000'", []string{"ALTER TABLE `bar` ADD COLUMN `c1` int NOT NULL DEFAULT 100000000000000", "ALTER TABLE `bar` ADD COLUMN `c2` smallint NOT NULL DEFAULT '100000000000000'"}, true, false},
 	}
 
 	for _, tt := range tests {
