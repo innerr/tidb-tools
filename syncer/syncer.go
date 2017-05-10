@@ -731,12 +731,6 @@ func (s *Syncer) run() (err error) {
 			pos.Pos = e.Header.LogPos
 			log.Debugf("[query]%s, [next pos]%v", sql, pos)
 
-			if s.skipQueryEvent(sql, string(ev.Schema)) {
-				binlogSkippedEventsTotal.WithLabelValues("query").Inc()
-				log.Warnf("[skip query-sql]%s  [schema]:%s", sql, string(ev.Schema))
-				continue
-			}
-
 			sqls, ok, err := resolveDDLSQL(sql)
 			if err != nil {
 				if s.skipQueryEvent(sql, string(ev.Schema)) {
