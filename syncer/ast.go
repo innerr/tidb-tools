@@ -196,9 +196,50 @@ func indexOptionToSQL(option *ast.IndexOption) string {
 	return ""
 }
 
+func tableOptionToSQL(options []*ast.TableOption) string {
+	sql := ""
+	if len(options) == 0 {
+		return sql
+	}
+
+	charset := struct {
+		exists bool
+		value  string
+	}{}
+	collate := struct {
+		exists bool
+		value  string
+	}{}
+
+	for _, option := range options {
+		switch option.Tp {
+		case ast.TableOptionCharset:
+			charset.exists = true
+			charset.value = option.StrValue
+		case ast.TableOptionCollate:
+			collate.exists = true
+			collate.value = option.StrValue
+		}
+	}
+	if charset.exists && collate.exists {
+		sql += fmt.Sprintf("DEFAULT CHARACTER SET = '%s' COLLATE = '%s'", charset.value, collate.value)
+	} else if charset.exists && !collate.exists {
+		sql += fmt.Sprintf("DEFAULT CHARACTER SET = '%s'", charset.value)
+	} else if !charset.exists && collate.exists {
+		sql += fmt.Sprintf("DEFAULT COLLATE = '%s'", collate.value)
+	}
+
+	return sql
+}
+
 func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 	sql := ""
+	log.Debugf("spec.Tp: %d", spec.Tp)
+
 	switch spec.Tp {
+	case ast.AlterTableOption:
+		sql += tableOptionToSQL(spec.Options)
+
 	case ast.AlterTableAddColumn:
 		sql += fmt.Sprintf("ADD COLUMN %s", columnDefToSQL(spec.NewColumn))
 		if spec.Position != nil {

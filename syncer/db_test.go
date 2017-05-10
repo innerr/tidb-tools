@@ -79,7 +79,8 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 	}{
 		{"drop table `foo`.`bar`", []string{"DROP TABLE `foo`.`bar`"}, true, false},
 		{"drop table if exists `foo`.`bar`", []string{"DROP TABLE IF EXISTS `foo`.`bar`"}, true, false},
-		// {"rename table `t1` to `t2`, `t3` to `t4`", []string{"RENAME TABLE `t1` TO `t2`", "RENAME TABLE `t3` TO `t4`"}, true, false}, //parser not supported currently.
+		{"rename table t1 to t2", []string{"rename table t1 to t2"}, true, false}, // no change
+		{"rename table `t1` to `t2`, `t3` to `t4`", nil, false, true},             //parser not supported two ddls currently.
 		{"alter table `bar` add column `id` int not null", []string{"alter table `bar` add column `id` int not null"}, true, false},
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL"}, true, false},
 		{"alter table `bar` add column `id2` int not null first", []string{"alter table `bar` add column `id2` int not null first"}, true, false},
@@ -105,7 +106,19 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar modify a varchar(255), modify b varchar(255) first, modify c varchar(255) after d", []string{"ALTER TABLE `bar` MODIFY COLUMN `a` varchar(255)", "ALTER TABLE `bar` MODIFY COLUMN `b` varchar(255) FIRST", "ALTER TABLE `bar` MODIFY COLUMN `c` varchar(255) AFTER `d`"}, true, false},
 		{"ALTER TABLE bar drop a, drop b", []string{"ALTER TABLE `bar` DROP COLUMN `a`", "ALTER TABLE `bar` DROP COLUMN `b`"}, true, false},
 		{"ALTER TABLE bar DROP PRIMARY KEY, drop a", []string{"ALTER TABLE `bar` DROP PRIMARY KEY", "ALTER TABLE `bar` DROP COLUMN `a`"}, true, false},
-		// {},
+		{"ALTER TABLE bar drop key a, drop index b", []string{"ALTER TABLE `bar` DROP INDEX `a`", "ALTER TABLE `bar` DROP INDEX `b`"}, true, false},
+		{"ALTER TABLE bar drop key a, drop FOREIGN KEY b", []string{"ALTER TABLE `bar` DROP INDEX `a`", "ALTER TABLE `bar` DROP FOREIGN KEY `b`"}, true, false},
+		// {"ALTER TABLE bar ENABLE KEYS, DISABLE KEYS", []string{"ALTER TABLE `bar` ENABLE KEYS", "ALTER TABLE `bar` DISABLE KEYS"}, true, false},
+		{"ALTER TABLE bar add index (id), rename to bar1", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`"}, true, false},
+		// {"ALTER TABLE bar rename to bar1, add index (id)", []string{"ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
+		{"ALTER TABLE bar add index (id), rename as bar1", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`"}, true, false},
+		{"ALTER TABLE bar rename index idx_1 to idx_2, rename key idx_3 to idx_4", nil, false, true}, // tidb not support rename index currently.
+		{"ALTER TABLE bar ORDER BY id1, id2", nil, false, true},                                      //tidb not support ORDER BY.
+		{"ALTER TABLE bar CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin", nil, false, true},         //tidb not support CONVERT TO CHARACTER SET xxx
+		{"ALTER TABLE bar character set utf8 collate utf8_bin, add index (id)", nil, false, true},    // tidb not support this.
+		{"ALTER TABLE bar add index (id), character set utf8 collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8' COLLATE = 'utf8_bin'"}, true, false},
+		{"ALTER TABLE bar add index (id), character set utf8", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8'"}, true, false},
+		{"ALTER TABLE bar add index (id), collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT COLLATE = 'utf8_bin'"}, true, false},
 	}
 
 	for _, tt := range tests {
