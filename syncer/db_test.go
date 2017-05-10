@@ -120,6 +120,7 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar add index (id), character set utf8 collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8' COLLATE = 'utf8_bin'"}, true, false},
 		{"ALTER TABLE bar add index (id), character set utf8", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8'"}, true, false},
 		{"ALTER TABLE bar add index (id), collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT COLLATE = 'utf8_bin'"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp not null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
 	}
 
 	for _, tt := range tests {
