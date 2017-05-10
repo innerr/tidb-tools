@@ -82,7 +82,8 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"rename table t1 to t2", []string{"rename table t1 to t2"}, true, false}, // no change
 		{"rename table `t1` to `t2`, `t3` to `t4`", nil, false, true},             //parser not supported two ddls currently.
 		{"alter table `bar` add column `id` int not null", []string{"alter table `bar` add column `id` int not null"}, true, false},
-		{"alter table `bar` add column `id1` int not null, add column `id2` int not null", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL"}, true, false},
+		// {"alter table `bar` add column `id1` int not null, add column `id2` int not null default 1", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL DEFAULT 1"}, true, false},
+		{"alter table `bar` add column `id1` int not null, add column `id2` int not null COMMENT 'this is id2'", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL COMMENT 'this is id2'"}, true, false},
 		{"alter table `bar` add column `id2` int not null first", []string{"alter table `bar` add column `id2` int not null first"}, true, false},
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null first", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL FIRST"}, true, false},
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null after `id1`", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL AFTER `id1`"}, true, false},
