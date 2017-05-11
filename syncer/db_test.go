@@ -105,9 +105,13 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar drop key a, drop index b", []string{"ALTER TABLE `bar` DROP INDEX `a`", "ALTER TABLE `bar` DROP INDEX `b`"}, true, false},
 		{"ALTER TABLE bar drop key a, drop FOREIGN KEY b", []string{"ALTER TABLE `bar` DROP INDEX `a`", "ALTER TABLE `bar` DROP FOREIGN KEY `b`"}, true, false},
 		// {"ALTER TABLE bar ENABLE KEYS, DISABLE KEYS", []string{"ALTER TABLE `bar` ENABLE KEYS", "ALTER TABLE `bar` DISABLE KEYS"}, true, false},
+
 		{"ALTER TABLE bar add index (id), rename to bar1", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`"}, true, false},
-		// {"ALTER TABLE bar rename to bar1, add index (id)", []string{"ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
+		{"ALTER TABLE bar rename to bar1, add index (id)", []string{"ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
+		{"ALTER TABLE bar add index (id), rename as bar1, drop index id", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` DROP INDEX `id`"}, true, false},
+		{"ALTER TABLE foo.bar rename to foo.bar1, add index (id)", []string{"ALTER TABLE `foo`.`bar` RENAME TO `foo`.`bar1`", "ALTER TABLE `foo`.`bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
 		{"ALTER TABLE foo.bar add index (id), rename as bar1", []string{"ALTER TABLE `foo`.`bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `foo`.`bar` RENAME TO `bar1`"}, true, false},
+
 		{"ALTER TABLE bar rename index idx_1 to idx_2, rename key idx_3 to idx_4", nil, false, true}, // tidb not support rename index currently.
 		{"ALTER TABLE bar ORDER BY id1, id2", nil, false, true},                                      //tidb not support ORDER BY.
 		{"ALTER TABLE bar CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin", nil, false, true},         //tidb not support CONVERT TO CHARACTER SET xxx
@@ -130,6 +134,7 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar add c1 int not null default 100000000000000, add c2 smallint not null default '100000000000000'", []string{"ALTER TABLE `bar` ADD COLUMN `c1` int NOT NULL DEFAULT 100000000000000", "ALTER TABLE `bar` ADD COLUMN `c2` smallint NOT NULL DEFAULT '100000000000000'"}, true, false},
 		{"ALTER TABLE bar add c1 enum('','UNO','DUE') NOT NULL default '', add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` enum('','UNO','DUE') NOT NULL DEFAULT ''", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
 		{"alter table od_order add column caculating_string varchar(2) null COMMENT '计费重量体积' after delivery_status, add index (caculating_string)", []string{"ALTER TABLE `od_order` ADD COLUMN `caculating_string` varchar(2) NULL COMMENT '计费重量体积' AFTER `delivery_status`", "ALTER TABLE `od_order` ADD CONSTRAINT INDEX (`caculating_string`)"}, true, false}, // https://github.com/pingcap/tidb-tools/issues/115
+		{"alter table bar1 add index (cat1), add index (cat2), rename to bar", []string{"ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`cat1`)", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`cat2`)", "ALTER TABLE `bar1` RENAME TO `bar`"}, true, false},
 	}
 
 	for _, tt := range tests {

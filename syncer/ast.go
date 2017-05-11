@@ -267,7 +267,7 @@ func tableOptionToSQL(options []*ast.TableOption) string {
 	return sql
 }
 
-func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
+func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 	sql := ""
 	log.Debugf("spec.Tp: %d", spec.Tp)
 
@@ -312,6 +312,8 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 			columnDefToSQL(spec.NewColumn))
 
 	case ast.AlterTableRenameTable:
+		ntable.isNew = true
+		ntable.table = spec.NewTable
 		sql += fmt.Sprintf("RENAME TO %s", tableNameToSQL(spec.NewTable))
 
 	case ast.AlterTableAlterColumn:
@@ -330,13 +332,18 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec) string {
 	return sql
 }
 
-func alterTableStmtToSQL(stmt *ast.AlterTableStmt) string {
-	sql := fmt.Sprintf("ALTER TABLE %s ", tableNameToSQL(stmt.Table))
+func alterTableStmtToSQL(stmt *ast.AlterTableStmt, ntable *newTable) string {
+	var sql string
+	if ntable.isNew {
+		sql = fmt.Sprintf("ALTER TABLE %s ", tableNameToSQL(ntable.table))
+	} else {
+		sql = fmt.Sprintf("ALTER TABLE %s ", tableNameToSQL(stmt.Table))
+	}
 	for i, spec := range stmt.Specs {
 		if i != 0 {
 			sql += ", "
 		}
-		sql += alterTableSpecToSQL(spec)
+		sql += alterTableSpecToSQL(spec, ntable)
 	}
 
 	log.Debugf("alter table stmt to sql:%s", sql)

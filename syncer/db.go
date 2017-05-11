@@ -420,6 +420,12 @@ func isDDLSQL(sql string) (bool, error) {
 	return isDDL, nil
 }
 
+// newTable represents a new table renamed by ALTER TABLE tbl_name [TO|AS] new_tbl_name
+type newTable struct {
+	isNew bool
+	table *ast.TableName
+}
+
 // resolveDDLSQL resolve to one ddl sql
 // example: drop table test.a,test2.b -> drop table test.a; drop table test2.b;
 func resolveDDLSQL(sql string) (sqls []string, ok bool, err error) {
@@ -455,10 +461,13 @@ func resolveDDLSQL(sql string) (sqls []string, ok bool, err error) {
 			sqls = append(sqls, sql)
 			break
 		}
+
+		newTable := &newTable{}
+
 		log.Warnf("will split alter table statement: %v", sql)
 		for i := range tempSpecs {
 			v.Specs = tempSpecs[i : i+1]
-			sql1 := alterTableStmtToSQL(v)
+			sql1 := alterTableStmtToSQL(v, newTable)
 			log.Warnf("splitted alter table statement: %s", sql1)
 			sqls = append(sqls, sql1)
 		}
