@@ -37,6 +37,8 @@ import (
 	"github.com/siddontang/go-mysql/replication"
 )
 
+var safeModel bool
+
 type opType byte
 
 const (
@@ -250,11 +252,11 @@ func genInsertSQLs(schema string, table string, dataSeq [][]interface{}, columns
 		sqls = append(sqls, sql)
 		values = append(values, value)
 
-		if len(indexColumns) == 1 {
+		if safeModel {
+			keys = append(keys, defaultKey)
+		} else {
 			keyColumns, keyValues := getColumnData(columns, defaultIndexColumn, value)
 			keys = append(keys, genKeyList(keyColumns, keyValues))
-		} else {
-			keys = append(keys, defaultKey)
 		}
 	}
 
@@ -364,10 +366,10 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 		sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s LIMIT 1;", schema, table, kvs, where)
 		sqls = append(sqls, sql)
 		values = append(values, value)
-		if len(indexColumns) == 1 {
-			keys = append(keys, genKeyList(whereColumns, whereValues))
-		} else {
+		if safeModel {
 			keys = append(keys, defaultKey)
+		} else {
+			keys = append(keys, genKeyList(whereColumns, whereValues))
 		}
 	}
 
@@ -400,10 +402,10 @@ func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns
 
 		sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s LIMIT 1;", schema, table, where)
 		sqls = append(sqls, sql)
-		if len(indexColumns) == 1 {
-			keys = append(keys, genKeyList(whereColumns, whereValues))
-		} else {
+		if safeModel {
 			keys = append(keys, defaultKey)
+		} else {
+			keys = append(keys, genKeyList(whereColumns, whereValues))
 		}
 	}
 
