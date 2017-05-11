@@ -14,6 +14,7 @@
 package variable
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/pingcap/tidb/mysql"
@@ -37,10 +38,10 @@ type SysVar struct {
 	// Scope is for whether can be changed or not
 	Scope ScopeFlag
 
-	// Variable name
+	// Name is the variable name.
 	Name string
 
-	// Variable value
+	// Value is the variable value.
 	Value string
 }
 
@@ -58,15 +59,15 @@ const (
 	CodeUnknownStatusVar terror.ErrCode = 1
 	CodeUnknownSystemVar terror.ErrCode = 1193
 	CodeIncorrectScope   terror.ErrCode = 1238
+	CodeUnknownTimeZone  terror.ErrCode = 1298
 )
-
-var tidbSysVars map[string]bool
 
 // Variable errors
 var (
-	UnknownStatusVar  = terror.ClassVariable.New(CodeUnknownStatusVar, "unknown status variable")
-	UnknownSystemVar  = terror.ClassVariable.New(CodeUnknownSystemVar, "unknown system variable '%s'")
-	ErrIncorrectScope = terror.ClassVariable.New(CodeIncorrectScope, "Incorrect variable scope")
+	UnknownStatusVar   = terror.ClassVariable.New(CodeUnknownStatusVar, "unknown status variable")
+	UnknownSystemVar   = terror.ClassVariable.New(CodeUnknownSystemVar, "unknown system variable '%s'")
+	ErrIncorrectScope  = terror.ClassVariable.New(CodeIncorrectScope, "Incorrect variable scope")
+	ErrUnknownTimeZone = terror.ClassVariable.New(CodeUnknownTimeZone, "unknown or incorrect time zone: %s")
 )
 
 func init() {
@@ -79,16 +80,16 @@ func init() {
 	mySQLErrCodes := map[terror.ErrCode]uint16{
 		CodeUnknownSystemVar: mysql.ErrUnknownSystemVariable,
 		CodeIncorrectScope:   mysql.ErrIncorrectGlobalLocalVar,
+		CodeUnknownTimeZone:  mysql.ErrUnknownTimeZone,
 	}
 	terror.ErrClassToMySQLCodes[terror.ClassVariable] = mySQLErrCodes
+}
 
-	tidbSysVars = make(map[string]bool)
-	tidbSysVars[DistSQLScanConcurrencyVar] = true
-	tidbSysVars[DistSQLJoinConcurrencyVar] = true
-	tidbSysVars[TiDBSnapshot] = true
-	tidbSysVars[TiDBSkipConstraintCheck] = true
-	tidbSysVars[TiDBSkipDDLWait] = true
-	tidbSysVars[TiDBOptAggPushDown] = true
+func boolToIntStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
 
 // we only support MySQL now
@@ -410,7 +411,7 @@ var defaultSysVars = []*SysVar{
 	{ScopeNone, "innodb_read_only", "OFF"},
 	{ScopeNone, "datetime_format", "%Y-%m-%d %H:%i:%s"},
 	{ScopeGlobal, "log_syslog", ""},
-	{ScopeNone, "version", "5.6.25"},
+	{ScopeNone, "version", mysql.ServerVersion},
 	{ScopeGlobal | ScopeSession, "transaction_alloc_block_size", "8192"},
 	{ScopeGlobal, "sql_slave_skip_counter", "0"},
 	{ScopeNone, "have_openssl", "DISABLED"},
@@ -592,23 +593,21 @@ var defaultSysVars = []*SysVar{
 	{ScopeGlobal | ScopeSession, "min_examined_row_limit", "0"},
 	{ScopeGlobal, "sync_frm", "ON"},
 	{ScopeGlobal, "innodb_online_alter_log_max_size", "134217728"},
+	/* TiDB specific variables */
 	{ScopeSession, TiDBSnapshot, ""},
-	{ScopeGlobal | ScopeSession, DistSQLScanConcurrencyVar, "10"},
-	{ScopeGlobal | ScopeSession, DistSQLJoinConcurrencyVar, "5"},
 	{ScopeSession, TiDBSkipConstraintCheck, "0"},
-	{ScopeSession, TiDBSkipDDLWait, "0"},
-	{ScopeSession, TiDBOptAggPushDown, "ON"},
+	{ScopeSession, TiDBOptAggPushDown, boolToIntStr(DefOptAggPushDown)},
+	{ScopeSession, TiDBOptInSubqUnFolding, boolToIntStr(DefOptInSubqUnfolding)},
+	{ScopeSession, TiDBBuildStatsConcurrency, strconv.Itoa(DefBuildStatsConcurrency)},
+	{ScopeGlobal | ScopeSession, TiDBDistSQLScanConcurrency, strconv.Itoa(DefDistSQLScanConcurrency)},
+	{ScopeGlobal | ScopeSession, TiDBIndexLookupSize, strconv.Itoa(DefIndexLookupSize)},
+	{ScopeGlobal | ScopeSession, TiDBIndexLookupConcurrency, strconv.Itoa(DefIndexLookupConcurrency)},
+	{ScopeGlobal | ScopeSession, TiDBIndexSerialScanConcurrency, strconv.Itoa(DefIndexSerialScanConcurrency)},
+	{ScopeGlobal | ScopeSession, TiDBMaxRowCountForINLJ, strconv.Itoa(DefMaxRowCountForINLJ)},
+	{ScopeGlobal | ScopeSession, TiDBSkipDDLWait, boolToIntStr(DefSkipDDLWait)},
+	{ScopeGlobal | ScopeSession, TiDBSkipUTF8Check, boolToIntStr(DefSkipUTF8Check)},
+	{ScopeSession, TiDBBatchInsert, boolToIntStr(DefBatchInsert)},
 }
-
-// TiDB system variables
-const (
-	TiDBSnapshot              = "tidb_snapshot"
-	DistSQLScanConcurrencyVar = "tidb_distsql_scan_concurrency"
-	DistSQLJoinConcurrencyVar = "tidb_distsql_join_concurrency"
-	TiDBSkipConstraintCheck   = "tidb_skip_constraint_check"
-	TiDBSkipDDLWait           = "tidb_skip_ddl_wait"
-	TiDBOptAggPushDown        = "tidb_opt_agg_push_down"
-)
 
 // SetNamesVariables is the system variable names related to set names statements.
 var SetNamesVariables = []string{

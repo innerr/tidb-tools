@@ -44,7 +44,8 @@ type builtinLikeSig struct {
 	baseBuiltinFunc
 }
 
-// https://dev.mysql.com/doc/refman/5.7/en/string-comparison-functions.html#operator_like
+// eval evals a builtinLikeSig.
+// See https://dev.mysql.com/doc/refman/5.7/en/string-comparison-functions.html#operator_like
 func (b *builtinLikeSig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
 	if err != nil {
@@ -67,7 +68,12 @@ func (b *builtinLikeSig) eval(row []types.Datum) (d types.Datum, err error) {
 	if err != nil {
 		return d, errors.Trace(err)
 	}
-	escape := byte(args[2].GetInt64())
+	var escape byte = '\\'
+	// If this function is called by mock tikv, the args len will be 2 and the escape will be `\\`.
+	// TODO: Remove this after remove old evaluator logic.
+	if len(args) >= 3 {
+		escape = byte(args[2].GetInt64())
+	}
 	patChars, patTypes := stringutil.CompilePattern(patternStr, escape)
 	match := stringutil.DoMatch(valStr, patChars, patTypes)
 	d.SetInt64(boolToInt64(match))
@@ -86,7 +92,8 @@ type builtinRegexpSig struct {
 	baseBuiltinFunc
 }
 
-// See http://dev.mysql.com/doc/refman/5.7/en/regexp.html#operator_regexp
+// eval evals a builtinRegexpSig.
+// See https://dev.mysql.com/doc/refman/5.7/en/regexp.html#operator_regexp
 func (b *builtinRegexpSig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
 	if err != nil {

@@ -14,12 +14,19 @@
 package expression
 
 import (
+	"bytes"
+	"compress/zlib"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
+	"hash"
 
 	"github.com/juju/errors"
 	"github.com/pingcap/tidb/context"
+	"github.com/pingcap/tidb/mysql"
 	"github.com/pingcap/tidb/util/encrypt"
 	"github.com/pingcap/tidb/util/types"
 )
@@ -27,16 +34,7 @@ import (
 var (
 	_ functionClass = &aesDecryptFunctionClass{}
 	_ functionClass = &aesEncryptFunctionClass{}
-	_ functionClass = &asymmetricDecryptFunctionClass{}
-	_ functionClass = &asymmetricDeriveFunctionClass{}
-	_ functionClass = &asymmetricEncryptFunctionClass{}
-	_ functionClass = &asymmetricSignFunctionClass{}
-	_ functionClass = &asymmetricVerifyFunctionClass{}
 	_ functionClass = &compressFunctionClass{}
-	_ functionClass = &createAsymmetricPrivKeyFunctionClass{}
-	_ functionClass = &createAsymmetricPubKeyFunctionClass{}
-	_ functionClass = &createDHParametersFunctionClass{}
-	_ functionClass = &createDigestFunctionClass{}
 	_ functionClass = &decodeFunctionClass{}
 	_ functionClass = &desDecryptFunctionClass{}
 	_ functionClass = &desEncryptFunctionClass{}
@@ -56,16 +54,7 @@ var (
 var (
 	_ builtinFunc = &builtinAesDecryptSig{}
 	_ builtinFunc = &builtinAesEncryptSig{}
-	_ builtinFunc = &builtinAsymmetricDecryptSig{}
-	_ builtinFunc = &builtinAsymmetricDeriveSig{}
-	_ builtinFunc = &builtinAsymmetricEncryptSig{}
-	_ builtinFunc = &builtinAsymmetricSignSig{}
-	_ builtinFunc = &builtinAsymmetricVerifySig{}
 	_ builtinFunc = &builtinCompressSig{}
-	_ builtinFunc = &builtinCreateAsymmetricPrivKeySig{}
-	_ builtinFunc = &builtinCreateAsymmetricPubKeySig{}
-	_ builtinFunc = &builtinCreateDHParametersSig{}
-	_ builtinFunc = &builtinCreateDigestSig{}
 	_ builtinFunc = &builtinDecodeSig{}
 	_ builtinFunc = &builtinDesDecryptSig{}
 	_ builtinFunc = &builtinDesEncryptSig{}
@@ -102,6 +91,7 @@ type builtinAesDecryptSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinAesDecryptSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_aes-decrypt
 func (b *builtinAesDecryptSig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
@@ -114,6 +104,7 @@ func (b *builtinAesDecryptSig) eval(row []types.Datum) (d types.Datum, err error
 			return d, nil
 		}
 	}
+
 	cryptStr, err := args[0].ToBytes()
 	if err != nil {
 		return d, errors.Trace(err)
@@ -147,6 +138,7 @@ type builtinAesEncryptSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinAesEncryptSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_aes-decrypt
 // We only support aes-128-ecb mode.
 // TODO: support other mode.
@@ -178,7 +170,7 @@ func (b *builtinAesEncryptSig) eval(row []types.Datum) (d types.Datum, err error
 	return
 }
 
-// Transforms an arbitrary long key into a fixed length AES key.
+// handleAESKey transforms an arbitrary long key into a fixed length AES key.
 func handleAESKey(key []byte, mode string) []byte {
 	// TODO: get key size according to mode
 	keySize := 16
@@ -194,91 +186,6 @@ func handleAESKey(key []byte, mode string) []byte {
 	return rKey
 }
 
-type asymmetricDecryptFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *asymmetricDecryptFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinAsymmetricDecryptSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinAsymmetricDecryptSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_asymmetric-decrypt
-func (b *builtinAsymmetricDecryptSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("ASYMMETRIC_DECRYPT")
-}
-
-type asymmetricDeriveFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *asymmetricDeriveFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinAsymmetricDeriveSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinAsymmetricDeriveSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_asymmetric-derive
-func (b *builtinAsymmetricDeriveSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("ASYMMETRIC_DERIVE")
-}
-
-type asymmetricEncryptFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *asymmetricEncryptFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinAsymmetricEncryptSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinAsymmetricEncryptSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_asymmetric-encrypt
-func (b *builtinAsymmetricEncryptSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("ASYMMETRIC_ENCRYPT")
-}
-
-type asymmetricSignFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *asymmetricSignFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinAsymmetricSignSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinAsymmetricSignSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_asymmetric-sign
-func (b *builtinAsymmetricSignSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("ASYMMETRIC_SIGN")
-}
-
-type asymmetricVerifyFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *asymmetricVerifyFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinAsymmetricVerifySig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinAsymmetricVerifySig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_asymmetric-verify
-func (b *builtinAsymmetricVerifySig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("ASYMMETRIC_VERIFY")
-}
-
 type compressFunctionClass struct {
 	baseFunctionClass
 }
@@ -291,77 +198,30 @@ type builtinCompressSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinCompressSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_compress
 func (b *builtinCompressSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("COMPRESS")
-}
+	args, err := b.evalArgs(row)
+	if err != nil {
+		return d, errors.Trace(err)
+	}
 
-type createAsymmetricPrivKeyFunctionClass struct {
-	baseFunctionClass
-}
+	arg := args[0]
+	if arg.IsNull() {
+		return d, nil
+	}
 
-func (c *createAsymmetricPrivKeyFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinCreateAsymmetricPrivKeySig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
+	compressStr, err := arg.ToBytes()
+	if err != nil {
+		return d, errors.Trace(err)
+	}
 
-type builtinCreateAsymmetricPrivKeySig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_create-asymmetric-priv-key
-func (b *builtinCreateAsymmetricPrivKeySig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("CREATE_ASYMMETRIC_PRIV_KEY")
-}
-
-type createAsymmetricPubKeyFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *createAsymmetricPubKeyFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinCreateAsymmetricPubKeySig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinCreateAsymmetricPubKeySig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_create-asymmetric-pub-key
-func (b *builtinCreateAsymmetricPubKeySig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("CREATE_ASYMMETRIC_PUB_KEY")
-}
-
-type createDHParametersFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *createDHParametersFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinCreateDHParametersSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinCreateDHParametersSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_create-dh-parameters
-func (b *builtinCreateDHParametersSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("CREATE_DH_PARAMETERS")
-}
-
-type createDigestFunctionClass struct {
-	baseFunctionClass
-}
-
-func (c *createDigestFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinCreateDigestSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
-}
-
-type builtinCreateDigestSig struct {
-	baseBuiltinFunc
-}
-
-// See https://dev.mysql.com/doc/refman/5.7/en/enterprise-encryption-functions.html#function_create-digest
-func (b *builtinCreateDigestSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("CREATE_DIGEST")
+	var in bytes.Buffer
+	w := zlib.NewWriter(&in)
+	w.Write(compressStr)
+	w.Close()
+	d.SetBytes(in.Bytes())
+	return d, nil
 }
 
 type decodeFunctionClass struct {
@@ -376,6 +236,7 @@ type builtinDecodeSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinDecodeSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_decode
 func (b *builtinDecodeSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("DECODE")
@@ -393,6 +254,7 @@ type builtinDesDecryptSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinDesDecryptSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_des-decrypt
 func (b *builtinDesDecryptSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("DES_DECRYPT")
@@ -410,6 +272,7 @@ type builtinDesEncryptSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinDesEncryptSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_des-encrypt
 func (b *builtinDesEncryptSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("DES_ENCRYPT")
@@ -427,6 +290,7 @@ type builtinEncodeSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinEncodeSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_encode
 func (b *builtinEncodeSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("ENCODE")
@@ -444,6 +308,7 @@ type builtinEncryptSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinEncryptSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_encrypt
 func (b *builtinEncryptSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("ENCRYPT")
@@ -461,6 +326,7 @@ type builtinMD5Sig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinMD5Sig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_md5
 func (b *builtinMD5Sig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
@@ -494,6 +360,7 @@ type builtinOldPasswordSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinOldPasswordSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_old-password
 func (b *builtinOldPasswordSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("OLD_PASSWORD")
@@ -511,6 +378,7 @@ type builtinPasswordSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinPasswordSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_password
 func (b *builtinPasswordSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("PASSWORD")
@@ -528,9 +396,29 @@ type builtinRandomBytesSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinRandomBytesSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_random-bytes
 func (b *builtinRandomBytesSig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("RANDOM_BYTES")
+	args, err := b.evalArgs(row)
+	if err != nil {
+		return types.Datum{}, errors.Trace(err)
+	}
+	arg := args[0]
+	if arg.IsNull() {
+		return d, nil
+	}
+	size := arg.GetInt64()
+	if size < 1 || size > 1024 {
+		return d, mysql.NewErr(mysql.ErrDataOutOfRange, "length", "random_bytes")
+	}
+	buf := make([]byte, size)
+	if n, err := rand.Read(buf); err != nil {
+		return d, errors.Trace(err)
+	} else if int64(n) != size {
+		return d, errors.New("fail to generate random bytes")
+	}
+	d.SetBytes(buf)
+	return d, nil
 }
 
 type sha1FunctionClass struct {
@@ -545,6 +433,7 @@ type builtinSHA1Sig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinSHA1Sig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_sha1
 // The value is returned as a string of 40 hexadecimal digits, or NULL if the argument was NULL.
 func (b *builtinSHA1Sig) eval(row []types.Datum) (d types.Datum, err error) {
@@ -580,9 +469,55 @@ type builtinSHA2Sig struct {
 	baseBuiltinFunc
 }
 
+// Supported hash length of SHA-2 family
+const (
+	SHA0   int = 0
+	SHA224 int = 224
+	SHA256 int = 256
+	SHA384 int = 384
+	SHA512 int = 512
+)
+
+// eval evals a builtinSHA2Sig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_sha2
 func (b *builtinSHA2Sig) eval(row []types.Datum) (d types.Datum, err error) {
-	return d, errFunctionNotExists.GenByArgs("SHA2")
+	args, err := b.evalArgs(row)
+	if err != nil {
+		return d, errors.Trace(err)
+	}
+	for _, arg := range args {
+		if arg.IsNull() {
+			return d, nil
+		}
+	}
+	// Meaning of each argument:
+	// args[0]: the cleartext string to be hashed
+	// args[1]: desired bit length of result
+	bin, err := args[0].ToBytes()
+	if err != nil {
+		return d, errors.Trace(err)
+	}
+	hashLength, err := args[1].ToInt64(b.ctx.GetSessionVars().StmtCtx)
+	if err != nil {
+		return d, errors.Trace(err)
+	}
+	var hasher hash.Hash
+	switch int(hashLength) {
+	case SHA0, SHA256:
+		hasher = sha256.New()
+	case SHA224:
+		hasher = sha256.New224()
+	case SHA384:
+		hasher = sha512.New384()
+	case SHA512:
+		hasher = sha512.New()
+	}
+	if hasher != nil {
+		hasher.Write(bin)
+		data := fmt.Sprintf("%x", hasher.Sum(nil))
+		d.SetString(data)
+	}
+	return d, nil
 }
 
 type uncompressFunctionClass struct {
@@ -597,6 +532,7 @@ type builtinUncompressSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinUncompressSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_uncompress
 func (b *builtinUncompressSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("UNCOMPRESS")
@@ -614,6 +550,7 @@ type builtinUncompressedLengthSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinUncompressedLengthSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_uncompressed-length
 func (b *builtinUncompressedLengthSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("UNCOMPRESSED_LENGTH")
@@ -631,6 +568,7 @@ type builtinValidatePasswordStrengthSig struct {
 	baseBuiltinFunc
 }
 
+// eval evals a builtinValidatePasswordStrengthSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_validate-password-strength
 func (b *builtinValidatePasswordStrengthSig) eval(row []types.Datum) (d types.Datum, err error) {
 	return d, errFunctionNotExists.GenByArgs("VALIDATE_PASSWORD_STRENGTH")

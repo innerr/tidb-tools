@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/model"
 	"github.com/pingcap/tidb/mysql"
+	"github.com/pingcap/tidb/privilege"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/sessionctx/varsutil"
 	"github.com/pingcap/tidb/table"
@@ -31,22 +32,37 @@ import (
 )
 
 const (
-	tableSchemata      = "SCHEMATA"
-	tableTables        = "TABLES"
-	tableColumns       = "COLUMNS"
-	tableStatistics    = "STATISTICS"
-	tableCharacterSets = "CHARACTER_SETS"
-	tableCollations    = "COLLATIONS"
-	tableFiles         = "FILES"
-	catalogVal         = "def"
-	tableProfiling     = "PROFILING"
-	tablePartitions    = "PARTITIONS"
-	tableKeyColumm     = "KEY_COLUMN_USAGE"
-	tableReferConst    = "REFERENTIAL_CONSTRAINTS"
-	tableSessionVar    = "SESSION_VARIABLES"
-	tablePlugins       = "PLUGINS"
-	tableConstraints   = "TABLE_CONSTRAINTS"
-	tableTriggers      = "TRIGGERS"
+	tableSchemata                           = "SCHEMATA"
+	tableTables                             = "TABLES"
+	tableColumns                            = "COLUMNS"
+	tableStatistics                         = "STATISTICS"
+	tableCharacterSets                      = "CHARACTER_SETS"
+	tableCollations                         = "COLLATIONS"
+	tableFiles                              = "FILES"
+	catalogVal                              = "def"
+	tableProfiling                          = "PROFILING"
+	tablePartitions                         = "PARTITIONS"
+	tableKeyColumm                          = "KEY_COLUMN_USAGE"
+	tableReferConst                         = "REFERENTIAL_CONSTRAINTS"
+	tableSessionVar                         = "SESSION_VARIABLES"
+	tablePlugins                            = "PLUGINS"
+	tableConstraints                        = "TABLE_CONSTRAINTS"
+	tableTriggers                           = "TRIGGERS"
+	tableUserPrivileges                     = "USER_PRIVILEGES"
+	tableSchemaPrivileges                   = "SCHEMA_PRIVILEGES"
+	tableTablePrivileges                    = "TABLE_PRIVILEGES"
+	tableColumnPrivileges                   = "COLUMN_PRIVILEGES"
+	tableEngines                            = "ENGINES"
+	tableViews                              = "VIEWS"
+	tableRoutines                           = "ROUTINES"
+	tableParameters                         = "PARAMETERS"
+	tableEvents                             = "EVENTS"
+	tableGlobalStatus                       = "GLOBAL_STATUS"
+	tableGlobalVariables                    = "GLOBAL_VARIABLES"
+	tableSessionStatus                      = "SESSION_STATUS"
+	tableOptimizerTrace                     = "OPTIMIZER_TRACE"
+	tableTableSpaces                        = "TABLESPACES"
+	tableCollationCharacterSetApplicability = "COLLATION_CHARACTER_SET_APPLICABILITY"
 )
 
 type columnInfo struct {
@@ -322,6 +338,188 @@ var tableTriggersCols = []columnInfo{
 	{"DATABASE_COLLATION", mysql.TypeVarchar, 32, 0, nil, nil},
 }
 
+var tableUserPrivilegesCols = []columnInfo{
+	{"GRANTEE", mysql.TypeVarchar, 81, 0, nil, nil},
+	{"TABLE_CATALOG", mysql.TypeVarchar, 512, 0, nil, nil},
+	{"PRIVILEGE_TYPE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"IS_GRANTABLE", mysql.TypeVarchar, 3, 0, nil, nil},
+}
+
+var tableSchemaPrivilegesCols = []columnInfo{
+	{"GRANTEE", mysql.TypeVarchar, 81, mysql.NotNullFlag, nil, nil},
+	{"TABLE_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"TABLE_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"PRIVILEGE_TYPE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"IS_GRANTABLE", mysql.TypeVarchar, 3, mysql.NotNullFlag, nil, nil},
+}
+
+var tableTablePrivilegesCols = []columnInfo{
+	{"GRANTEE", mysql.TypeVarchar, 81, mysql.NotNullFlag, nil, nil},
+	{"TABLE_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"TABLE_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"TABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"PRIVILEGE_TYPE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"IS_GRANTABLE", mysql.TypeVarchar, 3, mysql.NotNullFlag, nil, nil},
+}
+
+var tableColumnPrivilegesCols = []columnInfo{
+	{"GRANTEE", mysql.TypeVarchar, 81, mysql.NotNullFlag, nil, nil},
+	{"TABLE_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"TABLE_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"TABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"COLUMN_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"PRIVILEGE_TYPE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"IS_GRANTABLE", mysql.TypeVarchar, 3, mysql.NotNullFlag, nil, nil},
+}
+
+var tableEnginesCols = []columnInfo{
+	{"ENGINE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"SUPPORT", mysql.TypeVarchar, 8, 0, nil, nil},
+	{"COMMENT", mysql.TypeVarchar, 80, 0, nil, nil},
+	{"TRANSACTIONS", mysql.TypeVarchar, 3, 0, nil, nil},
+	{"XA", mysql.TypeVarchar, 3, 0, nil, nil},
+	{"SAVEPOINTS", mysql.TypeVarchar, 3, 0, nil, nil},
+}
+
+var tableViewsCols = []columnInfo{
+	{"TABLE_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"TABLE_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"TABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"VIEW_DEFINITION", mysql.TypeLongBlob, 0, mysql.NotNullFlag, nil, nil},
+	{"CHECK_OPTION", mysql.TypeVarchar, 8, mysql.NotNullFlag, nil, nil},
+	{"IS_UPDATABLE", mysql.TypeVarchar, 3, mysql.NotNullFlag, nil, nil},
+	{"DEFINER", mysql.TypeVarchar, 77, mysql.NotNullFlag, nil, nil},
+	{"SECURITY_TYPE", mysql.TypeVarchar, 7, mysql.NotNullFlag, nil, nil},
+	{"CHARACTER_SET_CLIENT", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+	{"COLLATION_CONNECTION", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+}
+
+var tableRoutinesCols = []columnInfo{
+	{"SPECIFIC_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_TYPE", mysql.TypeVarchar, 9, mysql.NotNullFlag, nil, nil},
+	{"DATA_TYPE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"CHARACTER_MAXIMUM_LENGTH", mysql.TypeLong, 21, 0, nil, nil},
+	{"CHARACTER_OCTET_LENGTH", mysql.TypeLong, 21, 0, nil, nil},
+	{"NUMERIC_PRECISION", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"NUMERIC_SCALE", mysql.TypeLong, 21, 0, nil, nil},
+	{"DATETIME_PRECISION", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"CHARACTER_SET_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"COLLATION_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"DTD_IDENTIFIER", mysql.TypeLongBlob, 0, 0, nil, nil},
+	{"ROUTINE_BODY", mysql.TypeVarchar, 8, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_DEFINITION", mysql.TypeLongBlob, 0, 0, nil, nil},
+	{"EXTERNAL_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"EXTERNAL_LANGUAGE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"PARAMETER_STYLE", mysql.TypeVarchar, 8, mysql.NotNullFlag, nil, nil},
+	{"IS_DETERMINISTIC", mysql.TypeVarchar, 3, mysql.NotNullFlag, nil, nil},
+	{"SQL_DATA_ACCESS", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"SQL_PATH", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"SECURITY_TYPE", mysql.TypeVarchar, 7, mysql.NotNullFlag, nil, nil},
+	{"CREATED", mysql.TypeDatetime, 0, mysql.NotNullFlag, "0000-00-00 00:00:00", nil},
+	{"LAST_ALTERED", mysql.TypeDatetime, 0, mysql.NotNullFlag, "0000-00-00 00:00:00", nil},
+	{"SQL_MODE", mysql.TypeVarchar, 8192, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_COMMENT", mysql.TypeLongBlob, 0, 0, nil, nil},
+	{"DEFINER", mysql.TypeVarchar, 77, mysql.NotNullFlag, nil, nil},
+	{"CHARACTER_SET_CLIENT", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+	{"COLLATION_CONNECTION", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+	{"DATABASE_COLLATION", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+}
+
+var tableParametersCols = []columnInfo{
+	{"SPECIFIC_CATALOG", mysql.TypeVarchar, 512, mysql.NotNullFlag, nil, nil},
+	{"SPECIFIC_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"SPECIFIC_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"ORDINAL_POSITION", mysql.TypeVarchar, 21, mysql.NotNullFlag, nil, nil},
+	{"PARAMETER_MODE", mysql.TypeVarchar, 5, 0, nil, nil},
+	{"PARAMETER_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"DATA_TYPE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"CHARACTER_MAXIMUM_LENGTH", mysql.TypeVarchar, 21, 0, nil, nil},
+	{"CHARACTER_OCTET_LENGTH", mysql.TypeVarchar, 21, 0, nil, nil},
+	{"NUMERIC_PRECISION", mysql.TypeVarchar, 21, 0, nil, nil},
+	{"NUMERIC_SCALE", mysql.TypeVarchar, 21, 0, nil, nil},
+	{"DATETIME_PRECISION", mysql.TypeVarchar, 21, 0, nil, nil},
+	{"CHARACTER_SET_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"COLLATION_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"DTD_IDENTIFIER", mysql.TypeLongBlob, 0, mysql.NotNullFlag, nil, nil},
+	{"ROUTINE_TYPE", mysql.TypeVarchar, 9, mysql.NotNullFlag, nil, nil},
+}
+
+var tableEventsCols = []columnInfo{
+	{"EVENT_CATALOG", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"EVENT_SCHEMA", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"EVENT_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"DEFINER", mysql.TypeVarchar, 77, mysql.NotNullFlag, nil, nil},
+	{"TIME_ZONE", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"EVENT_BODY", mysql.TypeVarchar, 8, mysql.NotNullFlag, nil, nil},
+	{"EVENT_DEFINITION", mysql.TypeLongBlob, 0, 0, nil, nil},
+	{"EVENT_TYPE", mysql.TypeVarchar, 9, mysql.NotNullFlag, nil, nil},
+	{"EXECUTE_AT", mysql.TypeDatetime, 0, 0, nil, nil},
+	{"INTERVAL_VALUE", mysql.TypeVarchar, 256, 0, nil, nil},
+	{"INTERVAL_FIELD", mysql.TypeVarchar, 18, 0, nil, nil},
+	{"SQL_MODE", mysql.TypeVarchar, 8192, mysql.NotNullFlag, nil, nil},
+	{"STARTS", mysql.TypeDatetime, 0, 0, nil, nil},
+	{"ENDS", mysql.TypeDatetime, 0, 0, nil, nil},
+	{"STATUS", mysql.TypeVarchar, 18, mysql.NotNullFlag, nil, nil},
+	{"ON_COMPLETION", mysql.TypeVarchar, 12, mysql.NotNullFlag, nil, nil},
+	{"CREATED", mysql.TypeDatetime, 0, mysql.NotNullFlag, "0000-00-00 00:00:00", nil},
+	{"LAST_ALTERED", mysql.TypeDatetime, 0, mysql.NotNullFlag, "0000-00-00 00:00:00", nil},
+	{"LAST_EXECUTED", mysql.TypeDatetime, 0, 0, nil, nil},
+	{"EVENT_COMMENT", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"ORIGINATOR", mysql.TypeLong, 10, mysql.NotNullFlag, 0, nil},
+	{"CHARACTER_SET_CLIENT", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+	{"COLLATION_CONNECTION", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+	{"DATABASE_COLLATION", mysql.TypeVarchar, 32, mysql.NotNullFlag, nil, nil},
+}
+
+var tableGlobalStatusCols = []columnInfo{
+	{"VARIABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"VARIABLE_VALUE", mysql.TypeVarchar, 1024, 0, nil, nil},
+}
+
+var tableGlobalVariablesCols = []columnInfo{
+	{"VARIABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"VARIABLE_VALUE", mysql.TypeVarchar, 1024, 0, nil, nil},
+}
+
+var tableSessionStatusCols = []columnInfo{
+	{"VARIABLE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, nil, nil},
+	{"VARIABLE_VALUE", mysql.TypeVarchar, 1024, 0, nil, nil},
+}
+
+var tableOptimizerTraceCols = []columnInfo{
+	{"QUERY", mysql.TypeLongBlob, 0, mysql.NotNullFlag, "", nil},
+	{"TRACE", mysql.TypeLongBlob, 0, mysql.NotNullFlag, "", nil},
+	{"MISSING_BYTES_BEYOND_MAX_MEM_SIZE", mysql.TypeShort, 20, mysql.NotNullFlag, 0, nil},
+	{"INSUFFICIENT_PRIVILEGES", mysql.TypeTiny, 1, mysql.NotNullFlag, 0, nil},
+}
+
+var tableTableSpacesCols = []columnInfo{
+	{"TABLESPACE_NAME", mysql.TypeVarchar, 64, mysql.NotNullFlag, "", nil},
+	{"ENGINE", mysql.TypeVarchar, 64, mysql.NotNullFlag, "", nil},
+	{"TABLESPACE_TYPE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"LOGFILE_GROUP_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"EXTENT_SIZE", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"AUTOEXTEND_SIZE", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"MAXIMUM_SIZE", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"NODEGROUP_ID", mysql.TypeLonglong, 21, 0, nil, nil},
+	{"TABLESPACE_COMMENT", mysql.TypeVarchar, 2048, 0, nil, nil},
+}
+
+var tableCollationCharacterSetApplicabilityCols = []columnInfo{
+	{"TABLESPACE_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"ENGINE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"TABLESPACE_TYPE", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"LOGFILE_GROUP_NAME", mysql.TypeVarchar, 64, 0, nil, nil},
+	{"EXTENT_SIZE", mysql.TypeLong, 21, 0, nil, nil},
+	{"AUTOEXTEND_SIZE", mysql.TypeLong, 21, 0, nil, nil},
+	{"MAXIMUM_SIZE", mysql.TypeLong, 21, 0, nil, nil},
+	{"NODEGROUP_ID", mysql.TypeLong, 21, 0, nil, nil},
+	{"TABLESPACE_COMMENT", mysql.TypeVarchar, 2048, 0, nil, nil},
+}
+
 func dataForCharacterSets() (records [][]types.Datum) {
 	records = append(records,
 		types.MakeDatums("ascii", "ascii_general_ci", "US ASCII", 1),
@@ -356,6 +554,26 @@ func dataForSessionVar(ctx context.Context) (records [][]types.Datum, err error)
 		records = append(records, row)
 	}
 	return
+}
+
+func dataForUserPrivileges(ctx context.Context) [][]types.Datum {
+	pm := privilege.GetPrivilegeManager(ctx)
+	return pm.UserPrivilegesTable()
+}
+
+func dataForEngines() (records [][]types.Datum) {
+	records = append(records,
+		types.MakeDatums("InnoDB", "DEFAULT", "Supports transactions, row-level locking, and foreign keys", "YES", "YES", "YES"),
+		types.MakeDatums("CSV", "YES", "CSV storage engine", "NO", "NO", "NO"),
+		types.MakeDatums("MRG_MYISAM", "YES", "Collection of identical MyISAM tables", "NO", "NO", "NO"),
+		types.MakeDatums("BLACKHOLE", "YES", "/dev/null storage engine (anything you write to it disappears)", "NO", "NO", "NO"),
+		types.MakeDatums("MyISAM", "YES", "MyISAM storage engine", "NO", "NO", "NO"),
+		types.MakeDatums("MEMORY", "YES", "Hash based, stored in memory, useful for temporary tables", "NO", "NO", "NO"),
+		types.MakeDatums("ARCHIVE", "YES", "Archive storage engine", "NO", "NO", "NO"),
+		types.MakeDatums("FEDERATED", "NO", "Federated MySQL storage engine", nil, nil, nil),
+		types.MakeDatums("PERFORMANCE_SCHEMA", "YES", "Performance Schema", "NO", "NO", "NO"),
+	)
+	return records
 }
 
 var filesCols = []columnInfo{
@@ -419,7 +637,7 @@ func dataForTables(schemas []*model.DBInfo) [][]types.Datum {
 				catalogVal,          // TABLE_CATALOG
 				schema.Name.O,       // TABLE_SCHEMA
 				table.Name.O,        // TABLE_NAME
-				"BASE_TABLE",        // TABLE_TYPE
+				"BASE TABLE",        // TABLE_TYPE
 				"InnoDB",            // ENGINE
 				uint64(10),          // VERSION
 				"Compact",           // ROW_FORMAT
@@ -630,21 +848,36 @@ func dataForTableConstraints(schemas []*model.DBInfo) [][]types.Datum {
 }
 
 var tableNameToColumns = map[string]([]columnInfo){
-	tableSchemata:      schemataCols,
-	tableTables:        tablesCols,
-	tableColumns:       columnsCols,
-	tableStatistics:    statisticsCols,
-	tableCharacterSets: charsetCols,
-	tableCollations:    collationsCols,
-	tableFiles:         filesCols,
-	tableProfiling:     profilingCols,
-	tablePartitions:    partitionsCols,
-	tableKeyColumm:     keyColumnUsageCols,
-	tableReferConst:    referConstCols,
-	tableSessionVar:    sessionVarCols,
-	tablePlugins:       pluginsCols,
-	tableConstraints:   tableConstraintsCols,
-	tableTriggers:      tableTriggersCols,
+	tableSchemata:                           schemataCols,
+	tableTables:                             tablesCols,
+	tableColumns:                            columnsCols,
+	tableStatistics:                         statisticsCols,
+	tableCharacterSets:                      charsetCols,
+	tableCollations:                         collationsCols,
+	tableFiles:                              filesCols,
+	tableProfiling:                          profilingCols,
+	tablePartitions:                         partitionsCols,
+	tableKeyColumm:                          keyColumnUsageCols,
+	tableReferConst:                         referConstCols,
+	tableSessionVar:                         sessionVarCols,
+	tablePlugins:                            pluginsCols,
+	tableConstraints:                        tableConstraintsCols,
+	tableTriggers:                           tableTriggersCols,
+	tableUserPrivileges:                     tableUserPrivilegesCols,
+	tableSchemaPrivileges:                   tableSchemaPrivilegesCols,
+	tableTablePrivileges:                    tableTablePrivilegesCols,
+	tableColumnPrivileges:                   tableColumnPrivilegesCols,
+	tableEngines:                            tableEnginesCols,
+	tableViews:                              tableViewsCols,
+	tableRoutines:                           tableRoutinesCols,
+	tableParameters:                         tableParametersCols,
+	tableEvents:                             tableEventsCols,
+	tableGlobalStatus:                       tableGlobalStatusCols,
+	tableGlobalVariables:                    tableGlobalVariablesCols,
+	tableSessionStatus:                      tableSessionStatusCols,
+	tableOptimizerTrace:                     tableOptimizerTraceCols,
+	tableTableSpaces:                        tableTableSpacesCols,
+	tableCollationCharacterSetApplicability: tableCollationCharacterSetApplicabilityCols,
 }
 
 func createInfoSchemaTable(handle *Handle, meta *model.TableInfo) *infoschemaTable {
@@ -708,6 +941,24 @@ func (it *infoschemaTable) getRows(ctx context.Context, cols []*table.Column) (f
 	case tableKeyColumm:
 	case tableReferConst:
 	case tablePlugins, tableTriggers:
+	case tableUserPrivileges:
+		fullRows = dataForUserPrivileges(ctx)
+	case tableEngines:
+		fullRows = dataForEngines()
+	case tableViews:
+	case tableRoutines:
+	// TODO: Fill the following tables.
+	case tableSchemaPrivileges:
+	case tableTablePrivileges:
+	case tableColumnPrivileges:
+	case tableParameters:
+	case tableEvents:
+	case tableGlobalStatus:
+	case tableGlobalVariables:
+	case tableSessionStatus:
+	case tableOptimizerTrace:
+	case tableTableSpaces:
+	case tableCollationCharacterSetApplicability:
 	}
 	if err != nil {
 		return nil, errors.Trace(err)
