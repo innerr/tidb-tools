@@ -96,7 +96,7 @@ type table struct {
 	name   string
 
 	columns      []*column
-	indexColumns []*column
+	indexColumns map[string][]*column
 }
 
 func castUnsigned(data interface{}, unsigned bool) interface{} {
@@ -176,14 +176,18 @@ func findColumn(columns []*column, indexColumn string) *column {
 	return nil
 }
 
-func findColumns(columns []*column, indexColumns []string) []*column {
-	result := make([]*column, 0, len(indexColumns))
+func findColumns(columns []*column, indexColumns map[string][]string) map[string][]*column {
+	result := make(map[string][]*column)
 
-	for _, name := range indexColumns {
-		column := findColumn(columns, name)
-		if column != nil {
-			result = append(result, column)
+	for keyName, indexCols := range indexColumns {
+		cols := make([]*column, 0, len(indexCols))
+		for _, name := range indexCols {
+			column := findColumn(columns, name)
+			if column != nil {
+				cols = append(cols, column)
+			}
 		}
+		result[keyName] = cols
 	}
 
 	return result

@@ -230,6 +230,7 @@ func (s *Syncer) getTableFromDB(db *sql.DB, schema string, name string) (*table,
 	table := &table{}
 	table.schema = schema
 	table.name = name
+	table.indexColumns = make(map[string][]*column)
 
 	err := s.getTableColumns(db, table)
 	if err != nil {
@@ -341,8 +342,7 @@ func (s *Syncer) getTableIndex(db *sql.DB, table *table) error {
 		| t     |          0 | ucd      |            2 | d           | A         |           0 |     NULL | NULL   | YES  | BTREE      |         |               |
 		+-------+------------+----------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+
 	*/
-	var keyName string
-	var columns []string
+	var columns = make(map[string][]string)
 	for rows.Next() {
 		data := make([]sql.RawBytes, len(rowColumns))
 		values := make([]interface{}, len(rowColumns))
@@ -358,18 +358,10 @@ func (s *Syncer) getTableIndex(db *sql.DB, table *table) error {
 
 		nonUnique := string(data[1])
 		if nonUnique == "0" {
-			if keyName == "" {
-				keyName = string(data[2])
-			} else {
-				if keyName != string(data[2]) {
-					break
-				}
-			}
-
-			columns = append(columns, string(data[4]))
+			keyName := string(data[2])
+			columns[keyName] = append(columns[keyName], string(data[4]))
 		}
 	}
-
 	if rows.Err() != nil {
 		return errors.Trace(rows.Err())
 	}
