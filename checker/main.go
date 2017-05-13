@@ -22,14 +22,16 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
+	"github.com/pingcap/tidb-tools/pkg/utils"
 )
 
 var (
-	logLevel = flag.String("L", "info", "log level: info, debug, warn, error, fatal")
-	host     = flag.String("host", "127.0.0.1", "MySQL host")
-	port     = flag.Int("port", 3306, "MySQL port")
-	username = flag.String("user", "root", "User name")
-	password = flag.String("password", "", "Password")
+	logLevel     = flag.String("L", "info", "log level: info, debug, warn, error, fatal")
+	host         = flag.String("host", "127.0.0.1", "MySQL host")
+	port         = flag.Int("port", 3306, "MySQL port")
+	username     = flag.String("user", "root", "User name")
+	password     = flag.String("password", "", "Password")
+	printVersion = flag.Bool("V", false, "prints version and exit")
 )
 
 func openDB(dbName string) (*sql.DB, error) {
@@ -58,6 +60,12 @@ func main() {
 	}
 
 	flag.Parse()
+
+	if *printVersion {
+		fmt.Printf(utils.GetRawInfo("checker"))
+		return
+	}
+
 	if len(flag.Args()) == 0 {
 		log.Error("Miss database name")
 		return

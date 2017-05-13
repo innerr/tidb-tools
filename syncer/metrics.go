@@ -21,6 +21,7 @@ import (
 	"strconv"
 
 	"github.com/ngaut/log"
+	"github.com/pingcap/tidb-tools/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/siddontang/go-mysql/mysql"
 )
@@ -88,7 +89,7 @@ func initStatusAndMetrics(addr string) {
 	go func() {
 		http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "application/text")
-			text := GetRawSyncerInfo()
+			text := utils.GetRawInfo("syncer")
 			w.Write([]byte(text))
 		})
 

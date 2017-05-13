@@ -1,28 +1,28 @@
 
-LDFLAGS += -X "main.Version=1.0.0~rc2+git.$(shell git rev-parse --short HEAD)"
-LDFLAGS += -X "main.BuildTS=$(shell date -u '+%Y-%m-%d %I:%M:%S')"
-LDFLAGS += -X "main.GitHash=$(shell git rev-parse HEAD)"
+LDFLAGS += -X "github.com/pingcap/tidb-tools/pkg/utils.Version=1.0.0~rc2+git.$(shell git rev-parse --short HEAD)"
+LDFLAGS += -X "github.com/pingcap/tidb-tools/pkg/utils.BuildTS=$(shell date -u '+%Y-%m-%d %I:%M:%S')"
+LDFLAGS += -X "github.com/pingcap/tidb-tools/pkg/utils.GitHash=$(shell git rev-parse HEAD)"
 
 GO := GO15VENDOREXPERIMENT="1" go
 
-.PHONY: build importer syncer checker loader test check deps
+.PHONY: build importer syncer checker loader dump_region test check deps
 
 build: importer syncer checker loader check test
 
 importer:
-	$(GO) build -o bin/importer ./importer
+	$(GO) build -ldflags '$(LDFLAGS)' -o bin/importer ./importer
 
 syncer:
 	$(GO) build -ldflags '$(LDFLAGS)' -o bin/syncer ./syncer
 
 checker:
-	$(GO) build -o bin/checker ./checker
+	$(GO) build -ldflags '$(LDFLAGS)' -o bin/checker ./checker
 
 loader:
-	$(GO) build -o bin/loader ./loader
+	$(GO) build -ldflags '$(LDFLAGS)' -o bin/loader ./loader
 
 dump_region:
-	$(GO) build -o bin/dump_region ./dump_region
+	$(GO) build -ldflags '$(LDFLAGS)' -o bin/dump_region ./dump_region
 
 test:
 

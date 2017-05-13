@@ -19,6 +19,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/juju/errors"
+	"github.com/pingcap/tidb-tools/pkg/utils"
 )
 
 // NewConfig creates a new config.
@@ -43,6 +44,7 @@ func NewConfig() *Config {
 	fs.IntVar(&cfg.DBCfg.Port, "P", 3306, "set the database host port")
 
 	fs.StringVar(&cfg.LogLevel, "L", "info", "log level: debug, info, warn, error, fatal")
+	fs.BoolVar(&cfg.printVersion, "V", false, "prints version and exit")
 
 	return cfg
 }
@@ -85,7 +87,8 @@ type Config struct {
 
 	DBCfg DBConfig `toml:"db" json:"db"`
 
-	configFile string
+	printVersion bool
+	configFile   string
 }
 
 // Parse parses flag definitions from the argument list.
@@ -94,6 +97,11 @@ func (c *Config) Parse(arguments []string) error {
 	err := c.FlagSet.Parse(arguments)
 	if err != nil {
 		return errors.Trace(err)
+	}
+
+	if c.printVersion {
+		fmt.Printf(utils.GetRawInfo("importer"))
+		return flag.ErrHelp
 	}
 
 	// Load config file if specified.

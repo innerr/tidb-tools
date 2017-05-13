@@ -22,15 +22,18 @@ import (
 
 	"github.com/pingcap/kvproto/pkg/metapb"
 	pd "github.com/pingcap/pd/pd-client"
+	"github.com/pingcap/tidb-tools/pkg/utils"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/codec"
+	"golang.org/x/net/context"
 )
 
 var (
-	pdAddr  = flag.String("pd", "http://127.0.0.1:2379", "PD address")
-	tableID = flag.Int64("table", 0, "table ID")
-	indexID = flag.Int64("index", 0, "index ID")
-	limit   = flag.Int("limit", 10000, "limit")
+	pdAddr       = flag.String("pd", "http://127.0.0.1:2379", "PD address")
+	tableID      = flag.Int64("table", 0, "table ID")
+	indexID      = flag.Int64("index", 0, "index ID")
+	limit        = flag.Int("limit", 10000, "limit")
+	printVersion = flag.Bool("V", false, "prints version and exit")
 )
 
 func exitWithErr(err error) {
@@ -52,6 +55,10 @@ type keyRange struct {
 
 func main() {
 	flag.Parse()
+	if *printVersion {
+		fmt.Printf(utils.GetRawInfo("dump_region"))
+		return
+	}
 
 	if *tableID == 0 {
 		exitWithErr(fmt.Errorf("need table ID"))
@@ -88,8 +95,9 @@ func main() {
 
 	fmt.Println(string(rangeInfo))
 
+	ctx := context.Background()
 	for i := 0; i < *limit; i++ {
-		region, leader, err := client.GetRegion(startKey)
+		region, leader, err := client.GetRegion(ctx, startKey)
 		exitWithErr(err)
 
 		if bytes.Compare(region.GetStartKey(), endKey) >= 0 {

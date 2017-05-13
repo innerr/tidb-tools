@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package utils
 
 import (
 	"fmt"
@@ -25,10 +25,10 @@ var (
 	GitHash = "None"
 )
 
-// GetRawSyncerInfo do what its name tells
-func GetRawSyncerInfo() string {
+// GetRawInfo do what its name tells
+func GetRawInfo(app string) string {
 	info := ""
-	info += fmt.Sprintf("syncer: v%s\n", Version)
+	info += fmt.Sprintf("%s: v%s\n", app, Version)
 	info += fmt.Sprintf("Git Commit Hash: %s\n", GitHash)
 	info += fmt.Sprintf("UTC Build Time: %s\n", BuildTS)
 	info += fmt.Sprintf("Go Version: %s\n", runtime.Version())

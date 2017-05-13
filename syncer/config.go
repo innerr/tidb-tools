@@ -20,6 +20,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/juju/errors"
+	"github.com/pingcap/tidb-tools/pkg/utils"
 )
 
 // NewConfig creates a new config.
@@ -108,7 +109,7 @@ func (c *Config) Parse(arguments []string) error {
 	}
 
 	if c.printVersion {
-		fmt.Printf(GetRawSyncerInfo())
+		fmt.Printf(utils.GetRawInfo("syncer"))
 		return flag.ErrHelp
 	}
 
