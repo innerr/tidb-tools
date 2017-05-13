@@ -230,41 +230,39 @@ func genColumnPlaceholders(length int) string {
 	return strings.Join(values, ",")
 }
 
-func genInsertSQLs(schema string, table string, dataSeq [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, []string, [][]interface{}, error) {
+func genInsertSQLs(schema string, table string, dataSeq [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, [][]string, [][]interface{}, error) {
 	sqls := make([]string, 0, len(dataSeq))
-	keys := make([]string, 0, len(dataSeq))
+	keys := make([][]string, 0, len(dataSeq))
 	values := make([][]interface{}, 0, len(dataSeq))
 	columnList := genColumnList(columns)
 	columnPlaceholders := genColumnPlaceholders(len(columns))
-	defaultKey := fmt.Sprintf("%s.%s", schema, table)
-	defaultIndexColumn := getDefaultIndexColumn(indexColumns)
 	for _, data := range dataSeq {
 		if len(data) != len(columns) {
 			return nil, nil, nil, errors.Errorf("insert columns and data mismatch in length: %d vs %d", len(columns), len(data))
 		}
 
-		key, value := genInsertSQL(schema, table, data, columns, defaultIndexColumn, defaultKey)
+		value := make([]interface{}, 0, len(data))
+		for i := range data {
+			value = append(value, castUnsigned(data[i], columns[i].unsigned))
+		}
+
 		sql := fmt.Sprintf("REPLACE INTO `%s`.`%s` (%s) VALUES (%s);", schema, table, columnList, columnPlaceholders)
+		ks := getMultipleKeys(columns, value, indexColumns)
 		sqls = append(sqls, sql)
 		values = append(values, value)
-		keys = append(keys, key)
+		keys = append(keys, ks)
 	}
 
 	return sqls, keys, values, nil
 }
 
-func genInsertSQL(schema string, table string, data []interface{}, columns []*column, indexColumns []*column, key string) (string, []interface{}) {
-	value := make([]interface{}, 0, len(data))
-	for i := range data {
-		value = append(value, castUnsigned(data[i], columns[i].unsigned))
+func getMultipleKeys(columns []*column, value []interface{}, indexColumns map[string][]*column) []string {
+	var multipleKeys []string
+	for _, indexCols := range indexColumns {
+		cols, vals := getColumnData(columns, indexCols, value)
+		multipleKeys = append(multipleKeys, genKeyList(cols, vals))
 	}
-
-	if !safeModel {
-		keyColumns, keyValues := getColumnData(columns, indexColumns, value)
-		key = genKeyList(keyColumns, keyValues)
-	}
-
-	return key, value
+	return multipleKeys
 }
 
 func getDefaultIndexColumn(indexColumns map[string][]*column) []*column {
@@ -273,6 +271,7 @@ func getDefaultIndexColumn(indexColumns map[string][]*column) []*column {
 			return indexCols
 		}
 	}
+
 	return nil
 }
 
@@ -318,53 +317,57 @@ func genKVs(columns []*column) string {
 	return kvs.String()
 }
 
-func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, []string, [][]interface{}, error) {
+func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, [][]string, [][]interface{}, error) {
 	sqls := make([]string, 0, len(data)/2)
-	keys := make([]string, 0, len(data)/2)
+	keys := make([][]string, 0, len(data)/2)
 	values := make([][]interface{}, 0, len(data)/2)
 	columnList := genColumnList(columns)
 	columnPlaceholders := genColumnPlaceholders(len(columns))
-	defaultKey := fmt.Sprintf("%s.%s", schema, table)
 	defaultIndexColumn := getDefaultIndexColumn(indexColumns)
 	for i := 0; i < len(data); i += 2 {
 		oldData := data[i]
-		newData := data[i+1]
-		if len(oldData) != len(newData) {
-			return nil, nil, nil, errors.Errorf("update data mismatch in length: %d vs %d", len(oldData), len(newData))
+		changedData := data[i+1]
+		if len(oldData) != len(changedData) {
+			return nil, nil, nil, errors.Errorf("update data mismatch in length: %d vs %d", len(oldData), len(changedData))
 		}
 
 		if len(oldData) != len(columns) {
 			return nil, nil, nil, errors.Errorf("update columns and data mismatch in length: %d vs %d", len(columns), len(oldData))
 		}
 
+		oldValues := make([]interface{}, 0, len(oldData))
+		for i := range data {
+			oldValues = append(oldValues, castUnsigned(oldData[i], columns[i].unsigned))
+		}
+		changedValues := make([]interface{}, 0, len(changedData))
+		for i := range data {
+			changedValues = append(changedValues, castUnsigned(changedData[i], columns[i].unsigned))
+		}
+
+		ks := getMultipleKeys(columns, oldValues, indexColumns)
+		ks = append(ks, getMultipleKeys(columns, changedValues, indexColumns)...)
+
 		if safeModel {
 			// generate delete sql from old data
-			sql, key, value := getDeleteSQL(schema, table, oldData, columns, defaultIndexColumn, defaultKey)
+			sql, value := getDeleteSQL(schema, table, oldValues, columns, defaultIndexColumn)
 			sqls = append(sqls, sql)
 			values = append(values, value)
-			keys = append(keys, key)
+			keys = append(keys, ks)
 			// generate replace sql from new data
-			key, value = genInsertSQL(schema, table, newData, columns, defaultIndexColumn, defaultKey)
 			sql = fmt.Sprintf("REPLACE INTO `%s`.`%s` (%s) VALUES (%s);", schema, table, columnList, columnPlaceholders)
 			sqls = append(sqls, sql)
-			values = append(values, value)
-			keys = append(keys, key)
+			values = append(values, changedValues)
+			keys = append(keys, ks)
 			continue
 		}
 
-		oldValues := make([]interface{}, 0, len(oldData))
-		changedValues := make([]interface{}, 0, len(newData))
 		updateColumns := make([]*column, 0, len(indexColumns))
-
-		for j := range oldData {
-			oldValues = append(oldValues, castUnsigned(oldData[j], columns[j].unsigned))
-
-			if reflect.DeepEqual(oldData[j], newData[j]) {
+		for j := range oldValues {
+			if reflect.DeepEqual(oldValues[j], changedValues[j]) {
 				continue
 			}
-
 			updateColumns = append(updateColumns, columns[j])
-			changedValues = append(changedValues, castUnsigned(newData[j], columns[j].unsigned))
+			changedValues = append(changedValues, changedValues[j])
 		}
 
 		// ignore no changed sql
@@ -387,38 +390,40 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 		sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s LIMIT 1;", schema, table, kvs, where)
 		sqls = append(sqls, sql)
 		values = append(values, value)
-		keys = append(keys, genKeyList(whereColumns, whereValues))
+		keys = append(keys, ks)
 	}
 
 	return sqls, keys, values, nil
 }
 
-func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, []string, [][]interface{}, error) {
+func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns []*column, indexColumns map[string][]*column) ([]string, [][]string, [][]interface{}, error) {
 	sqls := make([]string, 0, len(dataSeq))
-	keys := make([]string, 0, len(dataSeq))
+	keys := make([][]string, 0, len(dataSeq))
 	values := make([][]interface{}, 0, len(dataSeq))
-	defaultKey := fmt.Sprintf("%s.%s", schema, table)
 	defaultIndexColumn := getDefaultIndexColumn(indexColumns)
 	for _, data := range dataSeq {
 		if len(data) != len(columns) {
 			return nil, nil, nil, errors.Errorf("delete columns and data mismatch in length: %d vs %d", len(columns), len(data))
 		}
 
-		sql, key, value := getDeleteSQL(schema, table, data, columns, defaultIndexColumn, defaultKey)
+		values := make([]interface{}, 0, len(data))
+		for i := range data {
+			values = append(values, castUnsigned(data[i], columns[i].unsigned))
+		}
+
+		ks := getMultipleKeys(columns, values, indexColumns)
+		ks = append(ks, getMultipleKeys(columns, values, indexColumns)...)
+
+		sql, value := getDeleteSQL(schema, table, data, columns, defaultIndexColumn)
 		sqls = append(sqls, sql)
 		values = append(values, value)
-		keys = append(keys, key)
+		keys = append(keys, ks)
 	}
 
 	return sqls, keys, values, nil
 }
 
-func getDeleteSQL(schema string, table string, data []interface{}, columns []*column, indexColumns []*column, key string) (string, string, []interface{}) {
-	value := make([]interface{}, 0, len(data))
-	for i := range data {
-		value = append(value, castUnsigned(data[i], columns[i].unsigned))
-	}
-
+func getDeleteSQL(schema string, table string, value []interface{}, columns []*column, indexColumns []*column) (string, []interface{}) {
 	whereColumns, whereValues := columns, value
 	if len(indexColumns) > 0 {
 		whereColumns, whereValues = getColumnData(columns, indexColumns, value)
@@ -426,11 +431,8 @@ func getDeleteSQL(schema string, table string, data []interface{}, columns []*co
 
 	where := genWhere(whereColumns, whereValues)
 	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s LIMIT 1;", schema, table, where)
-	if !safeModel {
-		key = genKeyList(whereColumns, whereValues)
-	}
 
-	return sql, key, value
+	return sql, value
 }
 
 func ignoreDDLError(err error) bool {

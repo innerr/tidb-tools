@@ -64,6 +64,7 @@ type Syncer struct {
 
 	done chan struct{}
 	jobs []chan *job
+	keys karma
 
 	closed sync2.AtomicBool
 
@@ -92,6 +93,7 @@ func NewSyncer(cfg *Config) *Syncer {
 	syncer.done = make(chan struct{})
 	syncer.jobs = newJobChans(cfg.WorkerCount + 1)
 	syncer.tables = make(map[string]*table)
+	syncer.keys = make(map[string]string)
 	syncer.ctx, syncer.cancel = context.WithCancel(context.Background())
 	syncer.patternMap = make(map[string]*regexp.Regexp)
 	return syncer
@@ -669,8 +671,9 @@ func (s *Syncer) run() (err error) {
 			log.Debugf("schema: %s, table %s, RowsEvent data: %v", table.schema, table.name, ev.Rows)
 			var (
 				sqls []string
-				keys []string
+				keys [][]string
 				args [][]interface{}
+				key  string
 			)
 			switch e.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
@@ -682,7 +685,11 @@ func (s *Syncer) run() (err error) {
 				}
 
 				for i := range sqls {
-					job := newJob(insert, sqls[i], args[i], keys[i], true, pos)
+					key, err = s.resolveKarma(keys[i])
+					if err != nil {
+						return errors.Errorf("resolve karam error %v", err)
+					}
+					job := newJob(insert, sqls[i], args[i], key, true, pos)
 					err = s.addJob(job)
 					if err != nil {
 						return errors.Trace(err)
@@ -697,7 +704,11 @@ func (s *Syncer) run() (err error) {
 				}
 
 				for i := range sqls {
-					job := newJob(update, sqls[i], args[i], keys[i], true, pos)
+					key, err = s.resolveKarma(keys[i])
+					if err != nil {
+						return errors.Errorf("resolve karam error %v", err)
+					}
+					job := newJob(update, sqls[i], args[i], key, true, pos)
 					err = s.addJob(job)
 					if err != nil {
 						return errors.Trace(err)
@@ -712,7 +723,11 @@ func (s *Syncer) run() (err error) {
 				}
 
 				for i := range sqls {
-					job := newJob(del, sqls[i], args[i], keys[i], true, pos)
+					key, err = s.resolveKarma(keys[i])
+					if err != nil {
+						return errors.Errorf("resolve karam error %v", err)
+					}
+					job := newJob(del, sqls[i], args[i], key, true, pos)
 					err = s.addJob(job)
 					if err != nil {
 						return errors.Trace(err)
@@ -791,6 +806,23 @@ func (s *Syncer) run() (err error) {
 			binlogGTID.WithLabelValues("syncer", u.String()).Set(float64(ev.GNO))
 		}
 	}
+}
+
+func (s *Syncer) resolveKarma(keys []string) (string, error) {
+	if s.keys.DetectConflict(keys) {
+		if err := s.flushJobs(); err != nil {
+			return "", errors.Trace(err)
+		}
+		s.keys.Reset()
+	}
+	if err := s.keys.Add(keys); err != nil {
+		return "", errors.Trace(err)
+	}
+	var key string
+	if len(keys) > 0 {
+		key = keys[0]
+	}
+	return s.keys.Get(key), nil
 }
 
 func (s *Syncer) genRegexMap() {
