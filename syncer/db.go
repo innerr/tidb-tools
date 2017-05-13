@@ -431,7 +431,7 @@ type newTable struct {
 func resolveDDLSQL(sql string) (sqls []string, ok bool, err error) {
 	stmt, err := parser.New().ParseOneStmt(sql, "", "")
 	if err != nil {
-		log.Errorf("error while parsing sql: %s", sql)
+		log.Errorf("error while parsing sql: %s, err:%s", sql, err.Error())
 		return nil, false, errors.Trace(err)
 	}
 

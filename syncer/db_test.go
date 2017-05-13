@@ -84,18 +84,18 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"alter table `bar` add column `id1` int not null, add column `id2` int not null after `id1`", []string{"ALTER TABLE `bar` ADD COLUMN `id1` int NOT NULL", "ALTER TABLE `bar` ADD COLUMN `id2` int NOT NULL AFTER `id1`"}, true, false},
 		{"alter table `bar` add index (`id`)", []string{"alter table `bar` add index (`id`)"}, true, false},
 		{"alter table `bar` add key (`id`)", []string{"alter table `bar` add key (`id`)"}, true, false},
-		{"alter table `bar` add index `idx`(`id`, `name`), add constraint `name` index (`name`)", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX `idx` (`id`, `name`)", "ALTER TABLE `bar` ADD CONSTRAINT INDEX `name` (`name`)"}, true, false}, // doubt this. mysql doesn't have ADD CONSTRAINT INDEX syntax
-		{"alter table `bar` add index `idx`(`id`, `name`), add key (`name`)", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX `idx` (`id`, `name`)", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`name`)"}, true, false},
+		{"alter table `bar` add index `idx`(`id`, `name`), add index (`name`, `id`) comment 'second index'", []string{"ALTER TABLE `bar` ADD INDEX `idx` (`id`, `name`)", "ALTER TABLE `bar` ADD INDEX (`name`, `id`) COMMENT 'second index'"}, true, false}, // doubt this. mysql doesn't have ADD CONSTRAINT INDEX syntax
+		{"alter table `bar` add index `idx`(`id`, `name`), add key (`name`)", []string{"ALTER TABLE `bar` ADD INDEX `idx` (`id`, `name`)", "ALTER TABLE `bar` ADD INDEX (`name`)"}, true, false},
 		{"ALTER TABLE bar ADD FULLTEXT INDEX `FullText` (`name` ASC)", nil, false, true},               // tidb not support fulltext index
 		{"ALTER TABLE bar ADD FULLTEXT INDEX `fulltext` (`name`) WITH PARSER ngram", nil, false, true}, // ditto
 		{"ALTER TABLE bar ADD SPATIAL INDEX (`g`)", nil, false, true},                                  // tidb not support spatial index
-		{"ALTER TABLE bar ADD PRIMARY KEY (`g`), add index (`h`);", []string{"ALTER TABLE `bar` ADD CONSTRAINT PRIMARY KEY (`g`)", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`h`)"}, true, false},
+		{"ALTER TABLE bar ADD CONSTRAINT `pri` PRIMARY KEY (`g`), add index (`h`);", []string{"ALTER TABLE `bar` ADD CONSTRAINT `pri` PRIMARY KEY (`g`)", "ALTER TABLE `bar` ADD INDEX (`h`)"}, true, false},
 		{"ALTER TABLE bar ADD c INT unsigned NOT NULL AUTO_INCREMENT,ADD PRIMARY KEY (c);", []string{"ALTER TABLE `bar` ADD COLUMN `c` int UNSIGNED NOT NULL AUTO_INCREMENT", "ALTER TABLE `bar` ADD CONSTRAINT PRIMARY KEY (`c`)"}, true, false},
-		{"ALTER table bar ADD CONSTRAINT `x` index (name), add constraint `u1` unique (`u1`), add unique key (`u2`), add unique index (`u3`);", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX `x` (`name`)", "ALTER TABLE `bar` ADD CONSTRAINT UNIQUE INDEX `u1` (`u1`)", "ALTER TABLE `bar` ADD CONSTRAINT UNIQUE INDEX (`u2`)", "ALTER TABLE `bar` ADD CONSTRAINT UNIQUE INDEX (`u3`)"}, true, false},
-		{"ALTER TABLE bar add index (`name`), add index `hash_index` using hash (`name1`) COMMENT 'a hash index'", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`name`)", "ALTER TABLE `bar` ADD CONSTRAINT INDEX `hash_index` (`name1`) COMMENT 'a hash index'"}, true, false},
+		{"ALTER table bar ADD index (name), add constraint `u1` unique (`u1`), add unique key (`u2`), add unique index (`u3`);", []string{"ALTER TABLE `bar` ADD INDEX (`name`)", "ALTER TABLE `bar` ADD CONSTRAINT `u1` UNIQUE INDEX (`u1`)", "ALTER TABLE `bar` ADD CONSTRAINT UNIQUE INDEX (`u2`)", "ALTER TABLE `bar` ADD CONSTRAINT UNIQUE INDEX (`u3`)"}, true, false},
+		{"ALTER TABLE bar add index (`name`), add index `hash_index` using hash (`name1`) COMMENT 'a hash index'", []string{"ALTER TABLE `bar` ADD INDEX (`name`)", "ALTER TABLE `bar` ADD INDEX `hash_index` (`name1`) COMMENT 'a hash index'"}, true, false},
 		{"CREATE INDEX id_index ON lookup (id) USING BTREE", nil, false, true},                                                                                                         // tidb not support USING BTREE | HASH syntax
 		{"ALTER TABLE bar add index (`name`), add FOREIGN KEY (product_category, product_id) REFERENCES product(category, id) ON UPDATE CASCADE ON DELETE RESTRICT", nil, false, true}, //tidb not support ON UPDATE CASCADE ON DELETE RESTRICT
-		{"ALTER TABLE bar add index (`name`), add CONSTRAINT `pp` FOREIGN KEY (product_category, product_id) REFERENCES product(category, id)", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`name`)", "ALTER TABLE `bar` ADD CONSTRAINT FOREIGN KEY `pp` (`product_category`, `product_id`) REFERENCES `product` (`category`, `id`)"}, true, false},
+		{"ALTER TABLE bar add index (`name`), add CONSTRAINT `pp` FOREIGN KEY (product_category, product_id) REFERENCES product(category, id)", []string{"ALTER TABLE `bar` ADD INDEX (`name`)", "ALTER TABLE `bar` ADD CONSTRAINT `pp` FOREIGN KEY (`product_category`, `product_id`) REFERENCES `product` (`category`, `id`)"}, true, false},
 		{"ALTER TABLE bar alter `id` set default 1, alter `name` drop default", []string{"ALTER TABLE `bar` ALTER COLUMN `id` SET DEFAULT 1", "ALTER TABLE `bar` ALTER COLUMN `name` DROP DEFAULT"}, true, false},
 		{"ALTER TABLE bar change a b varchar(255), change c d varchar(255) first, change e f varchar(255) after g", nil, false, true}, // tidb not support change column  FIRST | AFTER column
 		{"ALTER TABLE bar change a b varchar(255), change c d varchar(255)", []string{"ALTER TABLE `bar` CHANGE COLUMN `a` `b` varchar(255)", "ALTER TABLE `bar` CHANGE COLUMN `c` `d` varchar(255)"}, true, false},
@@ -106,35 +106,39 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar drop key a, drop FOREIGN KEY b", []string{"ALTER TABLE `bar` DROP INDEX `a`", "ALTER TABLE `bar` DROP FOREIGN KEY `b`"}, true, false},
 		// {"ALTER TABLE bar ENABLE KEYS, DISABLE KEYS", []string{"ALTER TABLE `bar` ENABLE KEYS", "ALTER TABLE `bar` DISABLE KEYS"}, true, false},
 
-		{"ALTER TABLE bar add index (id), rename to bar1", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`"}, true, false},
-		{"ALTER TABLE bar rename to bar1, add index (id)", []string{"ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
-		{"ALTER TABLE bar add index (id), rename as bar1, drop index id", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` DROP INDEX `id`"}, true, false},
-		{"ALTER TABLE foo.bar rename to foo.bar1, add index (id)", []string{"ALTER TABLE `foo`.`bar` RENAME TO `foo`.`bar1`", "ALTER TABLE `foo`.`bar1` ADD CONSTRAINT INDEX (`id`)"}, true, false},
-		{"ALTER TABLE foo.bar add index (id), rename as bar1", []string{"ALTER TABLE `foo`.`bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `foo`.`bar` RENAME TO `bar1`"}, true, false},
+		{"ALTER TABLE bar add index (id), rename to bar1", []string{"ALTER TABLE `bar` ADD INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`"}, true, false},
+		{"ALTER TABLE bar rename to bar1, add index (id)", []string{"ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` ADD INDEX (`id`)"}, true, false},
+		{"ALTER TABLE bar add index (id), rename as bar1, drop index id", []string{"ALTER TABLE `bar` ADD INDEX (`id`)", "ALTER TABLE `bar` RENAME TO `bar1`", "ALTER TABLE `bar1` DROP INDEX `id`"}, true, false},
+		{"ALTER TABLE foo.bar rename to foo.bar1, add index (id)", []string{"ALTER TABLE `foo`.`bar` RENAME TO `foo`.`bar1`", "ALTER TABLE `foo`.`bar1` ADD INDEX (`id`)"}, true, false},
+		{"ALTER TABLE foo.bar add index (id), rename as bar1", []string{"ALTER TABLE `foo`.`bar` ADD INDEX (`id`)", "ALTER TABLE `foo`.`bar` RENAME TO `bar1`"}, true, false},
 
 		{"ALTER TABLE bar rename index idx_1 to idx_2, rename key idx_3 to idx_4", nil, false, true}, // tidb not support rename index currently.
 		{"ALTER TABLE bar ORDER BY id1, id2", nil, false, true},                                      //tidb not support ORDER BY.
 		{"ALTER TABLE bar CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin", nil, false, true},         //tidb not support CONVERT TO CHARACTER SET xxx
 		{"ALTER TABLE bar character set utf8 collate utf8_bin, add index (id)", nil, false, true},    // tidb not support this.
-		{"ALTER TABLE bar add index (id), character set utf8 collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8' COLLATE = 'utf8_bin'"}, true, false},
-		{"ALTER TABLE bar add index (id), character set utf8", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8'"}, true, false},
-		{"ALTER TABLE bar add index (id), collate utf8_bin", []string{"ALTER TABLE `bar` ADD CONSTRAINT INDEX (`id`)", "ALTER TABLE `bar` DEFAULT COLLATE = 'utf8_bin'"}, true, false},
+		{"ALTER TABLE bar add index (id), character set utf8 collate utf8_bin", []string{"ALTER TABLE `bar` ADD INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8' COLLATE = 'utf8_bin'"}, true, false},
+		{"ALTER TABLE bar add index (id), character set utf8", []string{"ALTER TABLE `bar` ADD INDEX (`id`)", "ALTER TABLE `bar` DEFAULT CHARACTER SET = 'utf8'"}, true, false},
+		{"ALTER TABLE bar add index (id), collate utf8_bin", []string{"ALTER TABLE `bar` ADD INDEX (`id`)", "ALTER TABLE `bar` DEFAULT COLLATE = 'utf8_bin'"}, true, false},
 
-		{"ALTER TABLE bar add c1 timestamp not null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp null default null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp not null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp null default null on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
 
-		{"ALTER TABLE bar add c1 timestamp null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp not null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"ALTER TABLE bar add c1 timestamp default current_timestamp on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp not null default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp NOT NULL DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp default 20150606 on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp DEFAULT 20150606 ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"ALTER TABLE bar add c1 timestamp default current_timestamp on update current_timestamp, add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
 
 		{"ALTER TABLE bar add c1 varchar(10) DEFAULT '' NOT NULL, add c2 varchar(10) NOT NULL DEFAULT 'foo'", []string{"ALTER TABLE `bar` ADD COLUMN `c1` varchar(10) DEFAULT '' NOT NULL", "ALTER TABLE `bar` ADD COLUMN `c2` varchar(10) NOT NULL DEFAULT 'foo'"}, true, false},
 		{"ALTER TABLE bar add c1 int not null default 100000000000000, add c2 smallint not null default '100000000000000'", []string{"ALTER TABLE `bar` ADD COLUMN `c1` int NOT NULL DEFAULT 100000000000000", "ALTER TABLE `bar` ADD COLUMN `c2` smallint NOT NULL DEFAULT '100000000000000'"}, true, false},
-		{"ALTER TABLE bar add c1 enum('','UNO','DUE') NOT NULL default '', add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` enum('','UNO','DUE') NOT NULL DEFAULT ''", "ALTER TABLE `bar` ADD CONSTRAINT INDEX (`c1`)"}, true, false},
-		{"alter table od_order add column caculating_string varchar(2) null COMMENT '计费重量体积' after delivery_status, add index (caculating_string)", []string{"ALTER TABLE `od_order` ADD COLUMN `caculating_string` varchar(2) NULL COMMENT '计费重量体积' AFTER `delivery_status`", "ALTER TABLE `od_order` ADD CONSTRAINT INDEX (`caculating_string`)"}, true, false}, // https://github.com/pingcap/tidb-tools/issues/115
-		{"alter table bar1 add index (cat1), add index (cat2), rename to bar", []string{"ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`cat1`)", "ALTER TABLE `bar1` ADD CONSTRAINT INDEX (`cat2`)", "ALTER TABLE `bar1` RENAME TO `bar`"}, true, false},
+		{"ALTER TABLE bar add c1 enum('','UNO','DUE') NOT NULL default '', add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` enum('','UNO','DUE') NOT NULL DEFAULT ''", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
+		{"alter table od_order add column caculating_string varchar(2) null COMMENT '计费重量体积' after delivery_status, add index (caculating_string)", []string{"ALTER TABLE `od_order` ADD COLUMN `caculating_string` varchar(2) NULL COMMENT '计费重量体积' AFTER `delivery_status`", "ALTER TABLE `od_order` ADD INDEX (`caculating_string`)"}, true, false}, // https://github.com/pingcap/tidb-tools/issues/115
+		{"alter table bar1 add index (cat1), add index (cat2), rename to bar", []string{"ALTER TABLE `bar1` ADD INDEX (`cat1`)", "ALTER TABLE `bar1` ADD INDEX (`cat2`)", "ALTER TABLE `bar1` RENAME TO `bar`"}, true, false},
+		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=none", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK = NONE"}, true, false},
+		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=default", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK DEFAULT"}, true, false},
+		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=shared", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK SHARED"}, true, false},
+		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=exclusive", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK EXCLUSIVE"}, true, false},
 	}
 
 	for _, tt := range tests {

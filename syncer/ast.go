@@ -165,7 +165,7 @@ func constraintToSQL(constraint *ast.Constraint) string {
 	sql := ""
 	switch constraint.Tp {
 	case ast.ConstraintKey, ast.ConstraintIndex:
-		sql += "INDEX "
+		sql += "ADD INDEX "
 		if constraint.Name != "" {
 			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
 		}
@@ -173,23 +173,29 @@ func constraintToSQL(constraint *ast.Constraint) string {
 		sql += indexOptionToSQL(constraint.Option)
 
 	case ast.ConstraintUniq, ast.ConstraintUniqKey, ast.ConstraintUniqIndex:
-		sql += "UNIQUE INDEX "
+		sql += "ADD CONSTRAINT "
 		if constraint.Name != "" {
 			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
 		}
+		sql += "UNIQUE INDEX "
 		sql += constraintKeysToSQL(constraint.Keys)
 		sql += indexOptionToSQL(constraint.Option)
 
 	case ast.ConstraintForeignKey:
-		sql += "FOREIGN KEY "
+		sql += "ADD CONSTRAINT "
 		if constraint.Name != "" {
 			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
 		}
+		sql += "FOREIGN KEY "
 		sql += constraintKeysToSQL(constraint.Keys)
 		sql += " REFERENCES "
 		sql += referenceDefToSQL(constraint.Refer)
 
 	case ast.ConstraintPrimaryKey:
+		sql += "ADD CONSTRAINT "
+		if constraint.Name != "" {
+			sql += fmt.Sprintf("`%s` ", escapeName(constraint.Name))
+		}
 		sql += "PRIMARY KEY "
 		sql += constraintKeysToSQL(constraint.Keys)
 		sql += indexOptionToSQL(constraint.Option)
@@ -288,10 +294,6 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 		sql += fmt.Sprintf("DROP INDEX `%s`", escapeName(spec.Name))
 
 	case ast.AlterTableAddConstraint:
-		sql += "ADD CONSTRAINT "
-		if spec.Name != "" {
-			sql += fmt.Sprintf("`%s` ", escapeName(spec.Name))
-		}
 		sql += constraintToSQL(spec.Constraint)
 
 	case ast.AlterTableDropForeignKey:
