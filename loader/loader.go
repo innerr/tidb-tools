@@ -400,7 +400,7 @@ func (l *Loader) prepare() error {
 	return l.prepareDataFiles(files)
 }
 
-func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string) error {
+func (l *Loader) restoreSchema(conn *Conn, sqlFile string, srcSchema string, destSchema string) error {
 	f, err := os.Open(sqlFile)
 	if err != nil {
 		return errors.Trace(err)
@@ -428,8 +428,12 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string) error 
 				}
 
 				var sqls []string
-				if len(schema) > 0 {
-					sqls = append(sqls, fmt.Sprintf("use %s;", schema))
+				if srcSchema != "" && destSchema != "" {
+					query = strings.Replace(query, srcSchema, destSchema, -1)
+				}else if srcSchema == "" && destSchema != "" {
+					sqls = append(sqls, fmt.Sprintf("use %s;", destSchema))
+				}else{
+
 				}
 
 				sqls = append(sqls, query)
@@ -469,11 +473,27 @@ func (l *Loader) restoreData() error {
 		return errors.Trace(err)
 	}
 
+	// set alternative db tirgger is flase
+	var alternativeTrigger bool = false
+
 	// restore db in sort
 	dbs := make([]string, 0, len(l.db2Tables))
-	for db := range l.db2Tables {
-		dbs = append(dbs, db)
+	if l.cfg.SourceDb != "" && l.cfg.AlternativeDb != "" {
+		_,ok := l.db2Tables[ l.cfg.SourceDb ]
+		if ! ok {
+			log.Fatalf("run db schema failed - can not find database files %s", l.cfg.SourceDb)
+		}
+		alternativeTrigger = true
+		dbs = append(dbs, l.cfg.SourceDb)
+
+	}else if l.cfg.AlternativeDb == "" || l.cfg.SourceDb == "" {
+		log.Fatalf("run db schema failed - must set both source-db and alternative-db")
+	}else{
+		for db := range l.db2Tables {
+			dbs = append(dbs, db)
+		}
 	}
+
 	sort.Strings(dbs)
 	for _, db := range dbs {
 		tables := l.db2Tables[db]
@@ -481,7 +501,15 @@ func (l *Loader) restoreData() error {
 		// create db
 		dbFile := fmt.Sprintf("%s/%s-schema-create.sql", l.cfg.Dir, db)
 		log.Infof("[loader][run db schema]%s[start]", dbFile)
-		err = l.restoreSchema(conn, dbFile, "")
+
+		srcdb := db
+		if alternativeTrigger {
+			// if alternativedb trigger is open,set value db to alternativedb
+			db = l.cfg.AlternativeDb
+			err = l.restoreSchema(conn, dbFile, srcdb, db)
+		}else{
+			err = l.restoreSchema(conn, dbFile, "", "")
+		}
 		if err != nil {
 			if isErrDBExists(err) {
 				log.Infof("[loader][database already exists, skip]%s", dbFile)
@@ -500,15 +528,15 @@ func (l *Loader) restoreData() error {
 		for _, table := range tnames {
 			dataFiles := tables[table]
 
-			if l.checkPoint.IsTableFinished(db, table) {
-				log.Infof("table (%s.%s) has finished, skip.", db, table)
+			if l.checkPoint.IsTableFinished(srcdb, table) {
+				log.Infof("table (%s.%s) has finished, skip.", srcdb, table)
 				continue
 			}
 
 			// create table
 			tableExist := false
-			tableFile := fmt.Sprintf("%s/%s.%s-schema.sql", l.cfg.Dir, db, table)
-			err := l.restoreSchema(conn, tableFile, db)
+			tableFile := fmt.Sprintf("%s/%s.%s-schema.sql", l.cfg.Dir, srcdb, table)
+			err := l.restoreSchema(conn, tableFile, "", db)
 			if err != nil {
 				if isErrTableExists(err) {
 					log.Infof("[loader][table already exists, skip]%s", tableFile)
@@ -525,7 +553,7 @@ func (l *Loader) restoreData() error {
 				log.Fatalf("check unique index failed. err: %v", err)
 			}
 
-			restoredFiles := l.checkPoint.GetRestoredFiles(db, table)
+			restoredFiles := l.checkPoint.GetRestoredFiles(srcdb, table)
 
 			// if partial data has restored for table that not have unique index, we must truncate the table
 			// and restart from the very begin.

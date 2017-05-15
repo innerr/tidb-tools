@@ -45,6 +45,9 @@ func NewConfig() *Config {
 	fs.StringVar(&cfg.PprofAddr, "pprof-addr", ":10084", "Loader pprof addr")
 	fs.StringVar(&cfg.LogLevel, "L", "info", "Loader log level: debug, info, warn, error, fatal")
 
+	fs.StringVar(&cfg.AlternativeDb, "B", "", "An alternative database to restore into")
+	fs.StringVar(&cfg.SourceDb, "s", "","Database to restore")
+
 	fs.StringVar(&cfg.configFile, "c", "", "config file")
 
 	return cfg
@@ -92,6 +95,9 @@ type Config struct {
 
 	configFile          string
 	SkipConstraintCheck int `toml:"skip-unique-check" json:"skip-unique-check"`
+
+	AlternativeDb string `toml:"alternative-db" json:"alternative-db"`
+	SourceDb string `toml:"source-db" json:"source-db"`
 }
 
 // Parse parses flag definitions from the argument list.
