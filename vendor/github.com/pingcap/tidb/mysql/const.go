@@ -166,10 +166,16 @@ const (
 	DeletePriv
 	// ShowDBPriv is the privilege to run show databases statement.
 	ShowDBPriv
+	// SuperPriv enables many operations and server behaviors.
+	SuperPriv
 	// CreateUserPriv is the privilege to create user.
 	CreateUserPriv
+	// TriggerPriv is not checked yet.
+	TriggerPriv
 	// DropPriv is the privilege to drop schema/table.
 	DropPriv
+	// ProcessPriv pertains to display of information about the threads executing within the server.
+	ProcessPriv
 	// GrantPriv is the privilege to grant privilege to user.
 	GrantPriv
 	// AlterPriv is the privilege to run alter statement.
@@ -182,6 +188,9 @@ const (
 	AllPriv
 )
 
+// AllPrivMask is the mask for PrivilegeType with all bits set to 1.
+const AllPrivMask = AllPriv - 1
+
 // Priv2UserCol is the privilege to mysql.user table column name.
 var Priv2UserCol = map[PrivilegeType]string{
 	CreatePriv:     "Create_priv",
@@ -190,8 +199,11 @@ var Priv2UserCol = map[PrivilegeType]string{
 	UpdatePriv:     "Update_priv",
 	DeletePriv:     "Delete_priv",
 	ShowDBPriv:     "Show_db_priv",
+	SuperPriv:      "Super_priv",
 	CreateUserPriv: "Create_user_priv",
+	TriggerPriv:    "Trigger_priv",
 	DropPriv:       "Drop_priv",
+	ProcessPriv:    "Process_priv",
 	GrantPriv:      "Grant_priv",
 	AlterPriv:      "Alter_priv",
 	ExecutePriv:    "Execute_priv",
@@ -206,8 +218,11 @@ var Col2PrivType = map[string]PrivilegeType{
 	"Update_priv":      UpdatePriv,
 	"Delete_priv":      DeletePriv,
 	"Show_db_priv":     ShowDBPriv,
+	"Super_priv":       SuperPriv,
 	"Create_user_priv": CreateUserPriv,
+	"Trigger_priv":     TriggerPriv,
 	"Drop_priv":        DropPriv,
+	"Process_priv":     ProcessPriv,
 	"Grant_priv":       GrantPriv,
 	"Alter_priv":       AlterPriv,
 	"Execute_priv":     ExecutePriv,
@@ -215,7 +230,7 @@ var Col2PrivType = map[string]PrivilegeType{
 }
 
 // AllGlobalPrivs is all the privileges in global scope.
-var AllGlobalPrivs = []PrivilegeType{SelectPriv, InsertPriv, UpdatePriv, DeletePriv, CreatePriv, DropPriv, GrantPriv, AlterPriv, ShowDBPriv, ExecutePriv, IndexPriv, CreateUserPriv}
+var AllGlobalPrivs = []PrivilegeType{SelectPriv, InsertPriv, UpdatePriv, DeletePriv, CreatePriv, DropPriv, ProcessPriv, GrantPriv, AlterPriv, ShowDBPriv, SuperPriv, ExecutePriv, IndexPriv, CreateUserPriv, TriggerPriv}
 
 // Priv2Str is the map for privilege to string.
 var Priv2Str = map[PrivilegeType]string{
@@ -225,8 +240,11 @@ var Priv2Str = map[PrivilegeType]string{
 	UpdatePriv:     "Update",
 	DeletePriv:     "Delete",
 	ShowDBPriv:     "Show Databases",
+	SuperPriv:      "Super",
 	CreateUserPriv: "Create User",
+	TriggerPriv:    "Trigger",
 	DropPriv:       "Drop",
+	ProcessPriv:    "Process",
 	GrantPriv:      "Grant Option",
 	AlterPriv:      "Alter",
 	ExecutePriv:    "Execute",
@@ -394,4 +412,22 @@ var Str2SQLMode = map[string]SQLMode{
 	"HIGH_NOT_PRECEDENCE":        ModeHighNotPrecedence,
 	"NO_ENGINE_SUBSTITUTION":     ModeNoEngineSubstitution,
 	"PAD_CHAR_TO_FULL_LENGTH":    ModePadCharToFullLength,
+}
+
+// FormatFunc is the locale format function signature.
+type FormatFunc func(string, string) (string, error)
+
+// GetLocaleFormatFunction get the format function for sepcific locale.
+func GetLocaleFormatFunction(loc string) FormatFunc {
+	locale, exist := locale2FormatFunction[loc]
+	if !exist {
+		return formatNotSupport
+	}
+	return locale
+}
+
+// locale2FormatFunction is the string represent of locale format function.
+var locale2FormatFunction = map[string]FormatFunc{
+	"en_US": formatENUS,
+	"zh_CN": formatZHCN,
 }

@@ -31,6 +31,9 @@ type baseBuiltinFunc struct {
 	argValues     []types.Datum
 	ctx           context.Context
 	deterministic bool
+	// self points to the built-in function signature which contains this baseBuiltinFunc.
+	// TODO: self will be removed after all built-in function signatures implement EvalXXX().
+	self builtinFunc
 }
 
 func newBaseBuiltinFunc(args []Expression, ctx context.Context) baseBuiltinFunc {
@@ -40,6 +43,11 @@ func newBaseBuiltinFunc(args []Expression, ctx context.Context) baseBuiltinFunc 
 		ctx:           ctx,
 		deterministic: true,
 	}
+}
+
+func (b *baseBuiltinFunc) setSelf(f builtinFunc) builtinFunc {
+	b.self = f
+	return f
 }
 
 func (b *baseBuiltinFunc) evalArgs(row []types.Datum) (_ []types.Datum, err error) {
@@ -59,6 +67,42 @@ func (b *baseBuiltinFunc) isDeterministic() bool {
 
 func (b *baseBuiltinFunc) getArgs() []Expression {
 	return b.args
+}
+
+func (b *baseBuiltinFunc) evalInt(row []types.Datum) (int64, bool, error) {
+	val, err := b.self.eval(row)
+	if err != nil || val.IsNull() {
+		return 0, val.IsNull(), errors.Trace(err)
+	}
+	intVal, err := val.ToInt64(b.ctx.GetSessionVars().StmtCtx)
+	return intVal, false, errors.Trace(err)
+}
+
+func (b *baseBuiltinFunc) evalReal(row []types.Datum) (float64, bool, error) {
+	val, err := b.self.eval(row)
+	if err != nil || val.IsNull() {
+		return 0, val.IsNull(), errors.Trace(err)
+	}
+	doubleVal, err := val.ToFloat64(b.ctx.GetSessionVars().StmtCtx)
+	return doubleVal, false, errors.Trace(err)
+}
+
+func (b *baseBuiltinFunc) evalString(row []types.Datum) (string, bool, error) {
+	val, err := b.self.eval(row)
+	if err != nil || val.IsNull() {
+		return "", val.IsNull(), errors.Trace(err)
+	}
+	strVal, err := val.ToString()
+	return strVal, false, errors.Trace(err)
+}
+
+func (b *baseBuiltinFunc) evalDecimal(row []types.Datum) (*types.MyDecimal, bool, error) {
+	val, err := b.self.eval(row)
+	if err != nil || val.IsNull() {
+		return nil, val.IsNull(), errors.Trace(err)
+	}
+	decVal, err := val.ToDecimal(b.ctx.GetSessionVars().StmtCtx)
+	return decVal, false, errors.Trace(err)
 }
 
 // equal only checks if both functions are non-deterministic and if these arguments are same.
@@ -83,10 +127,146 @@ func (b *baseBuiltinFunc) getCtx() context.Context {
 	return b.ctx
 }
 
+// baseIntBuiltinFunc represents the functions which return int values.
+// TODO: baseIntBuiltinFunc will be removed later after all built-in function signatures been implemented.
+type baseIntBuiltinFunc struct {
+	baseBuiltinFunc
+}
+
+func (b *baseIntBuiltinFunc) eval(row []types.Datum) (d types.Datum, err error) {
+	res, isNull, err := b.self.evalInt(row)
+	if err != nil || isNull {
+		return d, errors.Trace(err)
+	}
+	d.SetInt64(res)
+	return
+}
+
+// evalInt will always be overridden.
+func (b *baseIntBuiltinFunc) evalInt(row []types.Datum) (int64, bool, error) {
+	return b.self.evalInt(row)
+}
+
+func (b *baseIntBuiltinFunc) evalReal(row []types.Datum) (float64, bool, error) {
+	panic("cannot get REAL result from ClassInt expression")
+}
+
+func (b *baseIntBuiltinFunc) evalDecimal(row []types.Datum) (*types.MyDecimal, bool, error) {
+	panic("cannot get DECIMAL result from ClassInt expression")
+}
+
+func (b *baseIntBuiltinFunc) evalString(row []types.Datum) (string, bool, error) {
+	panic("cannot get STRING result from ClassInt expression")
+}
+
+// baseRealBuiltinFunc represents the functions which return real values.
+// TODO: baseRealBuiltinFunc will be removed later after all built-in function signatures been implemented.
+type baseRealBuiltinFunc struct {
+	baseBuiltinFunc
+}
+
+func (b *baseRealBuiltinFunc) eval(row []types.Datum) (d types.Datum, err error) {
+	res, isNull, err := b.self.evalReal(row)
+	if err != nil || isNull {
+		return d, errors.Trace(err)
+	}
+	d.SetFloat64(res)
+	return
+}
+
+// evalReal will always be overridden.
+func (b *baseRealBuiltinFunc) evalReal(row []types.Datum) (float64, bool, error) {
+	return b.self.evalReal(row)
+}
+
+func (b *baseRealBuiltinFunc) evalInt(row []types.Datum) (int64, bool, error) {
+	panic("cannot get INT result from ClassReal expression")
+}
+
+func (b *baseRealBuiltinFunc) evalDecimal(row []types.Datum) (*types.MyDecimal, bool, error) {
+	panic("cannot get DECIMAL result from ClassReal expression")
+}
+
+func (b *baseRealBuiltinFunc) evalString(row []types.Datum) (string, bool, error) {
+	panic("cannot get STRING result from ClassReal expression")
+}
+
+// baseDecimalBuiltinFunc represents the functions which return decimal values.
+// TODO: baseDecimalBuiltinFunc will be removed later after all built-in function signatures been implemented.
+type baseDecimalBuiltinFunc struct {
+	baseBuiltinFunc
+}
+
+func (b *baseDecimalBuiltinFunc) eval(row []types.Datum) (d types.Datum, err error) {
+	res, isNull, err := b.self.evalDecimal(row)
+	if err != nil || isNull {
+		return d, errors.Trace(err)
+	}
+	d.SetMysqlDecimal(res)
+	return
+}
+
+// evalDecimal will always be overridden.
+func (b *baseDecimalBuiltinFunc) evalDecimal(row []types.Datum) (*types.MyDecimal, bool, error) {
+	return b.self.evalDecimal(row)
+}
+
+func (b *baseDecimalBuiltinFunc) evalInt(row []types.Datum) (int64, bool, error) {
+	panic("cannot get INT result from ClassDecimal expression")
+}
+
+func (b *baseDecimalBuiltinFunc) evalReal(row []types.Datum) (float64, bool, error) {
+	panic("cannot get REAL result from ClassDecimal expression")
+}
+
+func (b *baseDecimalBuiltinFunc) evalString(row []types.Datum) (string, bool, error) {
+	panic("cannot get REAL result from ClassDecimal expression")
+}
+
+// baseStringBuiltinFunc represents the functions which return string values.
+// TODO: baseStringBuiltinFunc will be removed later after all built-in function signatures been implemented.
+type baseStringBuiltinFunc struct {
+	baseBuiltinFunc
+}
+
+func (b *baseStringBuiltinFunc) eval(row []types.Datum) (d types.Datum, err error) {
+	val, isNull, err := b.self.evalString(row)
+	if err != nil || isNull {
+		return d, errors.Trace(err)
+	}
+	d.SetString(val)
+	return
+}
+
+// evalString will always be overridden.
+func (b *baseStringBuiltinFunc) evalString(row []types.Datum) (string, bool, error) {
+	return b.self.evalString(row)
+}
+
+func (b *baseStringBuiltinFunc) evalInt(row []types.Datum) (int64, bool, error) {
+	panic("cannot get INT result from ClassString expression")
+}
+
+func (b *baseStringBuiltinFunc) evalReal(row []types.Datum) (float64, bool, error) {
+	panic("cannot get REAL result from ClassString expression")
+}
+
+func (b *baseStringBuiltinFunc) evalDecimal(row []types.Datum) (*types.MyDecimal, bool, error) {
+	panic("cannot get DECIMAL result from ClassString expression")
+}
+
 // builtinFunc stands for a particular function signature.
 type builtinFunc interface {
 	// eval does evaluation by the given row.
 	eval([]types.Datum) (types.Datum, error)
+	// evalInt evaluates int result of builtinFunc by given row.
+	evalInt(row []types.Datum) (val int64, isNull bool, err error)
+	// evalReal evaluates real representation of builtinFunc by given row.
+	evalReal(row []types.Datum) (val float64, isNull bool, err error)
+	// evalString evaluates string representation of builtinFunc by given row.
+	evalString(row []types.Datum) (val string, isNull bool, err error)
+	// evalDecimal evaluates decimal representation of builtinFunc by given row.
+	evalDecimal(row []types.Datum) (val *types.MyDecimal, isNull bool, err error)
 	// getArgs returns the arguments expressions.
 	getArgs() []Expression
 	// isDeterministic checks if a function is deterministic.
@@ -97,6 +277,8 @@ type builtinFunc interface {
 	equal(builtinFunc) bool
 	// getCtx returns this function's context.
 	getCtx() context.Context
+	// setSelf sets a pointer to itself.
+	setSelf(builtinFunc) builtinFunc
 }
 
 // baseFunctionClass will be contained in every struct that implement functionClass interface.
@@ -114,7 +296,7 @@ func (b *baseFunctionClass) verifyArgs(args []Expression) error {
 	return nil
 }
 
-// builtinFunc stands for a class for a function which may contains multiple functions.
+// functionClass is the interface for a function which may contains multiple functions.
 type functionClass interface {
 	// getFunction gets a function signature by the types and the counts of given arguments.
 	getFunction(args []Expression, ctx context.Context) (builtinFunc, error)
@@ -185,6 +367,7 @@ var funcs = map[string]functionClass{
 	ast.Extract:          &extractFunctionClass{baseFunctionClass{ast.Extract, 2, 2}},
 	ast.FromDays:         &fromDaysFunctionClass{baseFunctionClass{ast.FromDays, 1, 1}},
 	ast.FromUnixTime:     &fromUnixTimeFunctionClass{baseFunctionClass{ast.FromUnixTime, 1, 2}},
+	ast.GetFormat:        &getFormatFunctionClass{baseFunctionClass{ast.GetFormat, 2, 2}},
 	ast.Hour:             &hourFunctionClass{baseFunctionClass{ast.Hour, 1, 1}},
 	ast.LocalTime:        &nowFunctionClass{baseFunctionClass{ast.LocalTime, 0, 1}},
 	ast.LocalTimestamp:   &nowFunctionClass{baseFunctionClass{ast.LocalTimestamp, 0, 1}},
@@ -238,6 +421,7 @@ var funcs = map[string]functionClass{
 	ast.Instr:          &instrFunctionClass{baseFunctionClass{ast.Instr, 2, 2}},
 	ast.Lcase:          &lowerFunctionClass{baseFunctionClass{ast.Lcase, 1, 1}},
 	ast.Left:           &leftFunctionClass{baseFunctionClass{ast.Left, 2, 2}},
+	ast.Right:          &rightFunctionClass{baseFunctionClass{ast.Right, 2, 2}},
 	ast.Length:         &lengthFunctionClass{baseFunctionClass{ast.Length, 1, 1}},
 	ast.LoadFile:       &loadFileFunctionClass{baseFunctionClass{ast.LoadFile, 1, 1}},
 	ast.Locate:         &locateFunctionClass{baseFunctionClass{ast.Locate, 2, 3}},
@@ -248,6 +432,7 @@ var funcs = map[string]functionClass{
 	ast.MakeSet:        &makeSetFunctionClass{baseFunctionClass{ast.MakeSet, 2, -1}},
 	ast.Oct:            &octFunctionClass{baseFunctionClass{ast.Oct, 1, 1}},
 	ast.Ord:            &ordFunctionClass{baseFunctionClass{ast.Ord, 1, 1}},
+	ast.Position:       &locateFunctionClass{baseFunctionClass{ast.Position, 2, 2}},
 	ast.Quote:          &quoteFunctionClass{baseFunctionClass{ast.Quote, 1, 1}},
 	ast.Repeat:         &repeatFunctionClass{baseFunctionClass{ast.Repeat, 2, 2}},
 	ast.Replace:        &replaceFunctionClass{baseFunctionClass{ast.Replace, 3, 3}},
@@ -258,6 +443,7 @@ var funcs = map[string]functionClass{
 	ast.Substring:      &substringFunctionClass{baseFunctionClass{ast.Substring, 2, 3}},
 	ast.Substr:         &substringFunctionClass{baseFunctionClass{ast.Substr, 2, 3}},
 	ast.SubstringIndex: &substringIndexFunctionClass{baseFunctionClass{ast.SubstringIndex, 3, 3}},
+	ast.ToBase64:       &toBase64FunctionClass{baseFunctionClass{ast.ToBase64, 1, 1}},
 	ast.Trim:           &trimFunctionClass{baseFunctionClass{ast.Trim, 1, 3}},
 	ast.Upper:          &upperFunctionClass{baseFunctionClass{ast.Upper, 1, 1}},
 	ast.Ucase:          &upperFunctionClass{baseFunctionClass{ast.Ucase, 1, 1}},
@@ -300,7 +486,7 @@ var funcs = map[string]functionClass{
 	ast.InetAton:        &inetAtonFunctionClass{baseFunctionClass{ast.InetAton, 1, 1}},
 	ast.InetNtoa:        &inetNtoaFunctionClass{baseFunctionClass{ast.InetNtoa, 1, 1}},
 	ast.Inet6Aton:       &inet6AtonFunctionClass{baseFunctionClass{ast.Inet6Aton, 1, 1}},
-	ast.Inet6Ntoa:       &inet6NtonFunctionClass{baseFunctionClass{ast.Inet6Ntoa, 1, 1}},
+	ast.Inet6Ntoa:       &inet6NtoaFunctionClass{baseFunctionClass{ast.Inet6Ntoa, 1, 1}},
 	ast.IsFreeLock:      &isFreeLockFunctionClass{baseFunctionClass{ast.IsFreeLock, 1, 1}},
 	ast.IsIPv4:          &isIPv4FunctionClass{baseFunctionClass{ast.IsIPv4, 1, 1}},
 	ast.IsIPv4Compat:    &isIPv4CompatFunctionClass{baseFunctionClass{ast.IsIPv4Compat, 1, 1}},
@@ -346,26 +532,18 @@ var funcs = map[string]functionClass{
 	ast.In:         &inFunctionClass{baseFunctionClass{ast.In, 1, -1}},
 	ast.IsTruth:    &isTrueOpFunctionClass{baseFunctionClass{ast.IsTruth, 1, 1}, opcode.IsTruth},
 	ast.IsFalsity:  &isTrueOpFunctionClass{baseFunctionClass{ast.IsFalsity, 1, 1}, opcode.IsFalsity},
-	ast.Like:       &likeFunctionClass{baseFunctionClass{ast.Like, 3, 3}},
+	ast.Like:       &likeFunctionClass{baseFunctionClass{ast.Like, 2, 3}},
 	ast.Regexp:     &regexpFunctionClass{baseFunctionClass{ast.Regexp, 2, 2}},
 	ast.Case:       &caseWhenFunctionClass{baseFunctionClass{ast.Case, 1, -1}},
 	ast.RowFunc:    &rowFunctionClass{baseFunctionClass{ast.RowFunc, 2, -1}},
 	ast.SetVar:     &setVarFunctionClass{baseFunctionClass{ast.SetVar, 2, 2}},
 	ast.GetVar:     &getVarFunctionClass{baseFunctionClass{ast.GetVar, 1, 1}},
+	ast.BitCount:   &bitCountFunctionClass{baseFunctionClass{ast.BitCount, 1, 1}},
 
 	// encryption and compression functions
 	ast.AesDecrypt:               &aesDecryptFunctionClass{baseFunctionClass{ast.AesDecrypt, 2, 3}},
 	ast.AesEncrypt:               &aesEncryptFunctionClass{baseFunctionClass{ast.AesEncrypt, 2, 3}},
-	ast.AsymmetricDecrypt:        &asymmetricDecryptFunctionClass{baseFunctionClass{ast.AsymmetricDecrypt, 3, 3}},
-	ast.AsymmetricDerive:         &asymmetricDeriveFunctionClass{baseFunctionClass{ast.AsymmetricDerive, 2, 2}},
-	ast.AsymmetricEncrypt:        &asymmetricEncryptFunctionClass{baseFunctionClass{ast.AsymmetricEncrypt, 3, 3}},
-	ast.AsymmetricSign:           &asymmetricSignFunctionClass{baseFunctionClass{ast.AsymmetricSign, 4, 4}},
-	ast.AsymmetricVerify:         &asymmetricVerifyFunctionClass{baseFunctionClass{ast.AsymmetricVerify, 5, 5}},
 	ast.Compress:                 &compressFunctionClass{baseFunctionClass{ast.Compress, 1, 1}},
-	ast.CreateAsymmetricPrivKey:  &createAsymmetricPrivKeyFunctionClass{baseFunctionClass{ast.CreateAsymmetricPrivKey, 1, 2}},
-	ast.CreateAsymmetricPubKey:   &createAsymmetricPubKeyFunctionClass{baseFunctionClass{ast.CreateAsymmetricPubKey, 2, 2}},
-	ast.CreateDHParameters:       &createDHParametersFunctionClass{baseFunctionClass{ast.CreateDHParameters, 1, 1}},
-	ast.CreateDigest:             &createDigestFunctionClass{baseFunctionClass{ast.CreateDigest, 2, 2}},
 	ast.Decode:                   &decodeFunctionClass{baseFunctionClass{ast.Decode, 2, 2}},
 	ast.DesDecrypt:               &desDecryptFunctionClass{baseFunctionClass{ast.DesDecrypt, 1, 2}},
 	ast.DesEncrypt:               &desEncryptFunctionClass{baseFunctionClass{ast.DesEncrypt, 1, 2}},

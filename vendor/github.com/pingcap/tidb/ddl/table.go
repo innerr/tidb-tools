@@ -57,6 +57,7 @@ func (d *ddl) onCreateTable(t *meta.Meta, job *model.Job) error {
 		// Finish this job.
 		job.State = model.JobDone
 		job.BinlogInfo.AddTableInfo(ver, tbInfo)
+		d.asyncNotifyEvent(&Event{Tp: model.ActionCreateTable, TableInfo: tbInfo})
 		return nil
 	default:
 		return ErrInvalidTableState.Gen("invalid table state %v", tbInfo.State)
@@ -99,6 +100,9 @@ func (d *ddl) onDropTable(t *meta.Meta, job *model.Job) error {
 		tblInfo.State = model.StateNone
 		job.SchemaState = model.StateNone
 		ver, err := updateTableInfo(t, job, tblInfo, originalState)
+		if err != nil {
+			return errors.Trace(err)
+		}
 		if err = t.DropTable(job.SchemaID, job.TableID); err != nil {
 			break
 		}
@@ -107,6 +111,7 @@ func (d *ddl) onDropTable(t *meta.Meta, job *model.Job) error {
 		job.BinlogInfo.AddTableInfo(ver, tblInfo)
 		startKey := tablecodec.EncodeTablePrefix(tableID)
 		job.Args = append(job.Args, startKey)
+		d.asyncNotifyEvent(&Event{Tp: model.ActionDropTable, TableInfo: tblInfo})
 	default:
 		err = ErrInvalidTableState.Gen("invalid table state %v", tblInfo.State)
 	}

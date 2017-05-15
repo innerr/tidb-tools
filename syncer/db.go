@@ -666,7 +666,7 @@ LOOP:
 	}
 
 	if err != nil {
-		log.Errorf("exec sqls[%v] failed %v", sqls, errors.ErrorStack(err))
+		log.Errorf("exec sqls[%v]args[%v]failed %v", sqls, args, errors.ErrorStack(err))
 		return errors.Trace(err)
 	}
 

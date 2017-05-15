@@ -14,7 +14,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	// For pprof
@@ -60,21 +59,21 @@ var (
 			Namespace: "syncer",
 			Name:      "binlog_pos",
 			Help:      "current binlog pos",
-		}, []string{"type"})
+		}, []string{"node"})
 
 	binlogFile = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "syncer",
 			Name:      "binlog_file",
 			Help:      "current binlog file index",
-		}, []string{"type"})
+		}, []string{"node"})
 
 	binlogGTID = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "syncer",
 			Name:      "gtid",
 			Help:      "current transaction id",
-		}, []string{"server_uuid"})
+		}, []string{"node", "server_uuid"})
 )
 
 func initStatusAndMetrics(addr string) {
@@ -131,6 +130,6 @@ func masterGTIDGauge(gtids map[string]string) {
 		}
 		// intervals are sorted asc.
 		maxStop := set.Intervals[len(set.Intervals)-1].Stop
-		binlogGTID.WithLabelValues(fmt.Sprintf("master_binlog_gtid_%s", uuid)).Set(float64(maxStop))
+		binlogGTID.WithLabelValues("master", uuid).Set(float64(maxStop))
 	}
 }

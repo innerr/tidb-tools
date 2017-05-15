@@ -543,13 +543,13 @@ func (s *Syncer) sync(db *sql.DB, jobChan chan *job) {
 	}
 }
 
-func (s *Syncer) run() error {
+func (s *Syncer) run() (err error) {
 	defer func() {
-		if err := recover(); err != nil {
-			log.Errorf("panic error: %v", err)
+		if err1 := recover(); err1 != nil {
+			err = errors.Errorf("panic error: %v", err1)
 		}
-		if err := s.flushJobs(); err != nil {
-			log.Errorf("fail to finish all jobs error: %v", err)
+		if err1 := s.flushJobs(); err1 != nil {
+			log.Errorf("fail to finish all jobs error: %v", err1)
 		}
 		s.wg.Done()
 	}()
@@ -565,7 +565,7 @@ func (s *Syncer) run() error {
 
 	s.syncer = replication.NewBinlogSyncer(&cfg)
 
-	err := s.createDBs()
+	err = s.createDBs()
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -640,8 +640,8 @@ func (s *Syncer) run() error {
 			}
 		}
 
-		binlogPos.WithLabelValues("syncer_binlog_pos").Set(float64(e.Header.LogPos))
-		binlogFile.WithLabelValues("syncer_binlog_file").Set(getBinlogIndex(s.meta.Pos().Name))
+		binlogPos.WithLabelValues("syncer").Set(float64(e.Header.LogPos))
+		binlogFile.WithLabelValues("syncer").Set(getBinlogIndex(s.meta.Pos().Name))
 
 		switch ev := e.Event.(type) {
 		case *replication.RotateEvent:
@@ -796,9 +796,7 @@ func (s *Syncer) run() error {
 			gtid = fmt.Sprintf("%s:1-%d", u.String(), ev.GNO)
 			log.Debugf("gtid infomation: binlog %v, gtid %s", pos, gtid)
 
-			label := fmt.Sprintf("syncer_binlog_gtid_%s", u.String())
-			log.Debugf("gauge syncer gtid label:%s, gno:%d", label, ev.GNO)
-			binlogGTID.WithLabelValues(label).Set(float64(ev.GNO))
+			binlogGTID.WithLabelValues("syncer", u.String()).Set(float64(ev.GNO))
 		}
 	}
 }
@@ -886,8 +884,8 @@ func (s *Syncer) printStatus() {
 					}
 					log.Errorf("[syncer] get master status error %s", err.Error())
 				} else {
-					binlogPos.WithLabelValues("master_binlog_pos").Set(float64(masterPos.Pos))
-					binlogFile.WithLabelValues("master_binlog_file").Set(getBinlogIndex(masterPos.Name))
+					binlogPos.WithLabelValues("master").Set(float64(masterPos.Pos))
+					binlogFile.WithLabelValues("master").Set(getBinlogIndex(masterPos.Name))
 					masterGTIDGauge(masterGTIDs)
 				}
 			}

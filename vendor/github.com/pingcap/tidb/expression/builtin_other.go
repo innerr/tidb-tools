@@ -19,11 +19,12 @@ import (
 	"github.com/juju/errors"
 	"github.com/pingcap/tidb/context"
 	"github.com/pingcap/tidb/mysql"
+	"github.com/pingcap/tidb/sessionctx/variable"
+	"github.com/pingcap/tidb/terror"
 	"github.com/pingcap/tidb/util/types"
 )
 
 var (
-	_ functionClass = &sleepFunctionClass{}
 	_ functionClass = &inFunctionClass{}
 	_ functionClass = &rowFunctionClass{}
 	_ functionClass = &castFunctionClass{}
@@ -32,6 +33,7 @@ var (
 	_ functionClass = &lockFunctionClass{}
 	_ functionClass = &releaseLockFunctionClass{}
 	_ functionClass = &valuesFunctionClass{}
+	_ functionClass = &bitCountFunctionClass{}
 )
 
 var (
@@ -44,6 +46,7 @@ var (
 	_ builtinFunc = &builtinLockSig{}
 	_ builtinFunc = &builtinReleaseLockSig{}
 	_ builtinFunc = &builtinValuesSig{}
+	_ builtinFunc = &builtinBitCountSig{}
 )
 
 type inFunctionClass struct {
@@ -51,14 +54,16 @@ type inFunctionClass struct {
 }
 
 func (c *inFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinInSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
+	sig := &builtinInSig{newBaseBuiltinFunc(args, ctx)}
+	return sig.setSelf(sig), errors.Trace(c.verifyArgs(args))
 }
 
 type builtinInSig struct {
 	baseBuiltinFunc
 }
 
-// See http://dev.mysql.com/doc/refman/5.7/en/any-in-some-subqueries.html
+// eval evals a builtinInSig.
+// See https://dev.mysql.com/doc/refman/5.7/en/any-in-some-subqueries.html
 func (b *builtinInSig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
 	if err != nil {
@@ -103,7 +108,8 @@ type rowFunctionClass struct {
 }
 
 func (c *rowFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinRowSig{newBaseBuiltinFunc(args, ctx)}, errors.Trace(c.verifyArgs(args))
+	sig := &builtinRowSig{newBaseBuiltinFunc(args, ctx)}
+	return sig.setSelf(sig), errors.Trace(c.verifyArgs(args))
 }
 
 type builtinRowSig struct {
@@ -126,7 +132,8 @@ type castFunctionClass struct {
 }
 
 func (c *castFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
-	return &builtinCastSig{newBaseBuiltinFunc(args, ctx), c.tp}, errors.Trace(c.verifyArgs(args))
+	sig := &builtinCastSig{newBaseBuiltinFunc(args, ctx), c.tp}
+	return sig.setSelf(sig), errors.Trace(c.verifyArgs(args))
 }
 
 type builtinCastSig struct {
@@ -135,8 +142,9 @@ type builtinCastSig struct {
 	tp *types.FieldType
 }
 
-// CastFuncFactory produces builtin function according to field types.
+// eval evals a builtinCastSig.
 // See https://dev.mysql.com/doc/refman/5.7/en/cast-functions.html
+// CastFuncFactory produces builtin function according to field types.
 func (b *builtinCastSig) eval(row []types.Datum) (d types.Datum, err error) {
 	args, err := b.evalArgs(row)
 	if err != nil {
@@ -164,7 +172,7 @@ func (c *setVarFunctionClass) getFunction(args []Expression, ctx context.Context
 	err := errors.Trace(c.verifyArgs(args))
 	bt := &builtinSetVarSig{newBaseBuiltinFunc(args, ctx)}
 	bt.deterministic = false
-	return bt, errors.Trace(err)
+	return bt.setSelf(bt), errors.Trace(err)
 }
 
 type builtinSetVarSig struct {
@@ -196,7 +204,7 @@ func (c *getVarFunctionClass) getFunction(args []Expression, ctx context.Context
 	err := errors.Trace(c.verifyArgs(args))
 	bt := &builtinGetVarSig{newBaseBuiltinFunc(args, ctx)}
 	bt.deterministic = false
-	return bt, errors.Trace(err)
+	return bt.setSelf(bt), errors.Trace(err)
 }
 
 type builtinGetVarSig struct {
@@ -226,7 +234,7 @@ func (c *valuesFunctionClass) getFunction(args []Expression, ctx context.Context
 	err := errors.Trace(c.verifyArgs(args))
 	bt := &builtinValuesSig{newBaseBuiltinFunc(args, ctx), c.offset}
 	bt.deterministic = false
-	return bt, errors.Trace(err)
+	return bt.setSelf(bt), errors.Trace(err)
 }
 
 type builtinValuesSig struct {
@@ -245,4 +253,48 @@ func (b *builtinValuesSig) eval(_ []types.Datum) (types.Datum, error) {
 		return row[b.offset], nil
 	}
 	return types.Datum{}, errors.Errorf("Session current insert values len %d and column's offset %v don't match", len(row), b.offset)
+}
+
+type bitCountFunctionClass struct {
+	baseFunctionClass
+}
+
+func (c *bitCountFunctionClass) getFunction(args []Expression, ctx context.Context) (builtinFunc, error) {
+	sig := &builtinBitCountSig{newBaseBuiltinFunc(args, ctx)}
+	return sig.setSelf(sig), errors.Trace(c.verifyArgs(args))
+}
+
+type builtinBitCountSig struct {
+	baseBuiltinFunc
+}
+
+// eval evals a builtinBitCountSig.
+// See https://dev.mysql.com/doc/refman/5.7/en/bit-functions.html#function_bit-count
+func (b *builtinBitCountSig) eval(row []types.Datum) (d types.Datum, err error) {
+	args, err := b.evalArgs(row)
+	if err != nil {
+		return d, errors.Trace(err)
+	}
+	arg := args[0]
+	if arg.IsNull() {
+		return d, nil
+	}
+	sc := new(variable.StatementContext)
+	sc.IgnoreTruncate = true
+	bin, err := arg.ToInt64(sc)
+	if err != nil {
+		if terror.ErrorEqual(err, types.ErrOverflow) {
+			d.SetInt64(64)
+			return d, nil
+
+		}
+		return d, errors.Trace(err)
+	}
+	var count int64
+	for bin != 0 {
+		count++
+		bin = (bin - 1) & bin
+	}
+	d.SetInt64(count)
+	return d, nil
 }

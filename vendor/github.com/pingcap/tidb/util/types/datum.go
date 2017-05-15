@@ -47,6 +47,7 @@ const (
 	KindInterface     byte = 15
 	KindMinNotNull    byte = 16
 	KindMaxValue      byte = 17
+	KindRaw           byte = 18
 )
 
 // Datum is a data box holds different kind of data.
@@ -58,7 +59,7 @@ type Datum struct {
 	length    uint32      // length can hold uint32 values.
 	i         int64       // i can hold int64 uint64 float64 values.
 	b         []byte      // b can hold string or []byte values.
-	x         interface{} // f hold all other types.
+	x         interface{} // x hold all other types.
 }
 
 // Kind gets the kind of the datum.
@@ -289,6 +290,17 @@ func (d *Datum) GetMysqlTime() Time {
 func (d *Datum) SetMysqlTime(b Time) {
 	d.k = KindMysqlTime
 	d.x = b
+}
+
+// SetRaw sets raw value.
+func (d *Datum) SetRaw(b []byte) {
+	d.k = KindRaw
+	d.b = b
+}
+
+// GetRaw gets raw value.
+func (d *Datum) GetRaw() []byte {
+	return d.b
 }
 
 // GetValue gets the value of the datum of any kind.
@@ -657,7 +669,7 @@ func (d *Datum) ConvertTo(sc *variable.StatementContext, target *FieldType) (Dat
 	case mysql.TypeBlob, mysql.TypeTinyBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob,
 		mysql.TypeString, mysql.TypeVarchar, mysql.TypeVarString:
 		return d.convertToString(sc, target)
-	case mysql.TypeTimestamp, mysql.TypeDatetime, mysql.TypeDate:
+	case mysql.TypeTimestamp, mysql.TypeDatetime, mysql.TypeDate, mysql.TypeNewDate:
 		return d.convertToMysqlTime(sc, target)
 	case mysql.TypeDuration:
 		return d.convertToMysqlDuration(sc, target)
@@ -833,7 +845,7 @@ func (d *Datum) convertToUint(sc *variable.StatementContext, target *FieldType) 
 		ret.SetUint64(val)
 	case KindMysqlTime:
 		dec := d.GetMysqlTime().ToNumber()
-		dec.Round(dec, 0)
+		dec.Round(dec, 0, ModeHalfEven)
 		ival, err1 := dec.ToInt()
 		val, err = convertIntToUint(ival, upperBound, tp)
 		if err == nil {
@@ -841,7 +853,7 @@ func (d *Datum) convertToUint(sc *variable.StatementContext, target *FieldType) 
 		}
 	case KindMysqlDuration:
 		dec := d.GetMysqlDuration().ToNumber()
-		dec.Round(dec, 0)
+		dec.Round(dec, 0, ModeHalfEven)
 		var ival int64
 		ival, err = dec.ToInt()
 		if err == nil {
@@ -988,9 +1000,9 @@ func (d *Datum) convertToMysqlDecimal(sc *variable.StatementContext, target *Fie
 		prec, frac := dec.PrecisionAndFrac()
 		if prec-frac > target.Flen-target.Decimal {
 			dec = NewMaxOrMinDec(dec.IsNegative(), target.Flen, target.Decimal)
-			err = errors.Trace(ErrOverflow)
+			err = ErrOverflow.GenByArgs("DECIMAL", fmt.Sprintf("(%d, %d)", target.Flen, target.Decimal))
 		} else if frac != target.Decimal {
-			dec.Round(dec, target.Decimal)
+			dec.Round(dec, target.Decimal, ModeHalfEven)
 			if frac > target.Decimal {
 				err = errors.Trace(handleTruncateError(sc))
 			}
@@ -1032,7 +1044,17 @@ func (d *Datum) convertToMysqlYear(sc *variable.StatementContext, target *FieldT
 }
 
 func (d *Datum) convertToMysqlBit(sc *variable.StatementContext, target *FieldType) (Datum, error) {
-	x, err := d.convertToUint(sc, target)
+	var (
+		x   Datum
+		err error
+	)
+	if d.Kind() == KindString || d.Kind() == KindBytes {
+		var n uint64
+		n, err = ParseStringToBitValue(d.GetString(), target.Flen)
+		x = NewUintDatum(n)
+	} else {
+		x, err = d.convertToUint(sc, target)
+	}
 	if err != nil {
 		return x, errors.Trace(err)
 	}
@@ -1215,7 +1237,7 @@ func (d *Datum) toSignedInteger(sc *variable.StatementContext, tp byte) (int64, 
 	case KindMysqlTime:
 		// 2011-11-10 11:11:11.999999 -> 20111110111112
 		dec := d.GetMysqlTime().ToNumber()
-		dec.Round(dec, 0)
+		dec.Round(dec, 0, ModeHalfEven)
 		ival, err := dec.ToInt()
 		ival, err2 := convertIntToInt(ival, lowerBound, upperBound, tp)
 		if err == nil {
@@ -1225,7 +1247,7 @@ func (d *Datum) toSignedInteger(sc *variable.StatementContext, tp byte) (int64, 
 	case KindMysqlDuration:
 		// 11:11:11.999999 -> 111112
 		dec := d.GetMysqlDuration().ToNumber()
-		dec.Round(dec, 0)
+		dec.Round(dec, 0, ModeHalfEven)
 		ival, err := dec.ToInt()
 		ival, err2 := convertIntToInt(ival, lowerBound, upperBound, tp)
 		if err == nil {
@@ -1234,7 +1256,7 @@ func (d *Datum) toSignedInteger(sc *variable.StatementContext, tp byte) (int64, 
 		return ival, err
 	case KindMysqlDecimal:
 		var to MyDecimal
-		d.GetMysqlDecimal().Round(&to, 0)
+		d.GetMysqlDecimal().Round(&to, 0, ModeHalfEven)
 		ival, err := to.ToInt()
 		ival, err2 := convertIntToInt(ival, lowerBound, upperBound, tp)
 		if err == nil {
@@ -1492,6 +1514,13 @@ func NewDurationDatum(dur Duration) (d Datum) {
 // NewDecimalDatum creates a new Datum form a MyDecimal value.
 func NewDecimalDatum(dec *MyDecimal) (d Datum) {
 	d.SetMysqlDecimal(dec)
+	return d
+}
+
+// NewRawDatum create a new Datum that is not decoded.
+func NewRawDatum(b []byte) (d Datum) {
+	d.k = KindRaw
+	d.b = b
 	return d
 }
 
