@@ -135,10 +135,10 @@ func (s *testSyncerSuite) TestResolveDDLSQL(c *C) {
 		{"ALTER TABLE bar add c1 enum('','UNO','DUE') NOT NULL default '', add index (c1)", []string{"ALTER TABLE `bar` ADD COLUMN `c1` enum('','UNO','DUE') NOT NULL DEFAULT ''", "ALTER TABLE `bar` ADD INDEX (`c1`)"}, true, false},
 		{"alter table od_order add column caculating_string varchar(2) null COMMENT '计费重量体积' after delivery_status, add index (caculating_string)", []string{"ALTER TABLE `od_order` ADD COLUMN `caculating_string` varchar(2) NULL COMMENT '计费重量体积' AFTER `delivery_status`", "ALTER TABLE `od_order` ADD INDEX (`caculating_string`)"}, true, false}, // https://github.com/pingcap/tidb-tools/issues/115
 		{"alter table bar1 add index (cat1), add index (cat2), rename to bar", []string{"ALTER TABLE `bar1` ADD INDEX (`cat1`)", "ALTER TABLE `bar1` ADD INDEX (`cat2`)", "ALTER TABLE `bar1` RENAME TO `bar`"}, true, false},
-		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=none", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK = NONE"}, true, false},
-		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=default", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK DEFAULT"}, true, false},
-		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=shared", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK SHARED"}, true, false},
-		// {"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=exclusive", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` LOCK EXCLUSIVE"}, true, false},
+		{"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=none", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` "}, true, false},
+		{"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=default", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` "}, true, false},
+		{"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=shared", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` "}, true, false},
+		{"alter table `foo`.`bar` add index `idx_t` (`create_time`), lock=exclusive", []string{"ALTER TABLE `foo`.`bar` ADD INDEX `idx_t` (`create_time`)", "ALTER TABLE `foo`.`bar` "}, true, false},
 	}
 
 	for _, tt := range tests {

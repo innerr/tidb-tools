@@ -329,6 +329,8 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 	case ast.AlterTableDropPrimaryKey:
 		sql += "DROP PRIMARY KEY"
 
+	case ast.AlterTableLock:
+		// just ignore it
 	default:
 	}
 	return sql
