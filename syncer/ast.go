@@ -20,6 +20,8 @@ import (
 
 	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/ast"
+	"github.com/pingcap/tidb/mysql"
+	"github.com/pingcap/tidb/util/charset"
 	"github.com/pingcap/tidb/util/types"
 )
 
@@ -59,10 +61,40 @@ func formatStringValue(s string) string {
 	return fmt.Sprintf("'%s'", s)
 }
 
+func fieldTypeToSQL(ft *types.FieldType, isModify bool) string {
+	strs := []string{ft.CompactStr()}
+	if mysql.HasUnsignedFlag(ft.Flag) {
+		strs = append(strs, "UNSIGNED")
+	}
+	if mysql.HasZerofillFlag(ft.Flag) {
+		strs = append(strs, "ZEROFILL")
+	}
+	if mysql.HasBinaryFlag(ft.Flag) {
+		strs = append(strs, "BINARY")
+	}
+
+	// TiDB doesn't support alter table change/modify column charset and collation.
+	if isModify {
+		return strings.Join(strs, " ")
+	}
+
+	if types.IsTypeChar(ft.Tp) || types.IsTypeBlob(ft.Tp) {
+		if ft.Charset != "" && ft.Charset != charset.CharsetBin {
+			strs = append(strs, fmt.Sprintf("CHARACTER SET %s", ft.Charset))
+		}
+		if ft.Collate != "" && ft.Collate != charset.CharsetBin {
+			strs = append(strs, fmt.Sprintf("COLLATE %s", ft.Collate))
+		}
+	}
+
+	return strings.Join(strs, " ")
+}
+
 // FIXME: tidb's AST is error-some to handle more condition
-func columnDefToSQL(colDef *ast.ColumnDef) string {
-	typeDef := colDef.Tp.String()
+func columnDefToSQL(colDef *ast.ColumnDef, isModify bool) string {
+	typeDef := fieldTypeToSQL(colDef.Tp, isModify)
 	sql := fmt.Sprintf("%s %s", columnNameToSQL(colDef.Name), typeDef)
+
 	for _, opt := range colDef.Options {
 		switch opt.Tp {
 		case ast.ColumnOptionNotNull:
@@ -95,6 +127,7 @@ func columnDefToSQL(colDef *ast.ColumnDef) string {
 			panic("not implemented yet")
 		}
 	}
+
 	return sql
 }
 
@@ -282,7 +315,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 		sql += tableOptionToSQL(spec.Options)
 
 	case ast.AlterTableAddColumn:
-		sql += fmt.Sprintf("ADD COLUMN %s", columnDefToSQL(spec.NewColumn))
+		sql += fmt.Sprintf("ADD COLUMN %s", columnDefToSQL(spec.NewColumn, false))
 		if spec.Position != nil {
 			sql += positionToSQL(spec.Position)
 		}
@@ -301,7 +334,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 
 	case ast.AlterTableModifyColumn:
 		sql += "MODIFY COLUMN "
-		sql += columnDefToSQL(spec.NewColumn)
+		sql += columnDefToSQL(spec.NewColumn, true)
 		if spec.Position != nil {
 			sql += positionToSQL(spec.Position)
 		}
@@ -311,7 +344,7 @@ func alterTableSpecToSQL(spec *ast.AlterTableSpec, ntable *newTable) string {
 		sql += "CHANGE COLUMN "
 		sql += fmt.Sprintf("%s %s",
 			columnNameToSQL(spec.OldColumnName),
-			columnDefToSQL(spec.NewColumn))
+			columnDefToSQL(spec.NewColumn, true))
 
 	case ast.AlterTableRenameTable:
 		ntable.isNew = true
