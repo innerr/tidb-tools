@@ -1,5 +1,5 @@
-hash: 41d2c9c791c862714a1fd3d690dc677a99fd451da4d4441157a83c42e664ecd1
-updated: 2017-05-11T10:06:54.508581911+08:00
+hash: a3a2e2cc4c07f02cc0a30362456ced0ff3784790464ede80fb2ebfd42e796c6a
+updated: 2017-05-15T15:00:18.17653748+08:00
 imports:
 - name: github.com/beorn7/perks
   version: 3ac7bf7a47d159a033b107610db8a1b6575507a4
@@ -53,7 +53,7 @@ imports:
   subpackages:
   - pd-client
 - name: github.com/pingcap/tidb
-  version: 5f34aa4776a0334e766ace6eaa78fe6d17f55984
+  version: 9b8a445aa828ccf4ee2eb08e15fe4e3130108b37
   subpackages:
   - ast
   - context
