@@ -450,6 +450,7 @@ func (s *Syncer) addJob(job *job) error {
 	wait := s.checkWait(job)
 	if wait {
 		s.jobWg.Wait()
+		s.keys.Reset()
 	}
 
 	err := s.meta.Save(job.pos, "", "", wait)
