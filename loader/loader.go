@@ -429,7 +429,7 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, srcSchema string, des
 
 				var sqls []string
 				if srcSchema != "" && destSchema != "" {
-					query = strings.Replace(query, srcSchema, destSchema, -1)
+					query = strings.Replace(query, "`" + srcSchema + "`", "`" + destSchema + "`", -1)
 				}else if srcSchema == "" && destSchema != "" {
 					sqls = append(sqls, fmt.Sprintf("use %s;", destSchema))
 				}else{
@@ -474,8 +474,7 @@ func (l *Loader) restoreData() error {
 	}
 
 	// set alternative db tirgger is flase
-	var alternativeTrigger bool = false
-
+	var alternativeTrigger bool
 	// restore db in sort
 	dbs := make([]string, 0, len(l.db2Tables))
 	if l.cfg.SourceDb != "" && l.cfg.AlternativeDb != "" {
