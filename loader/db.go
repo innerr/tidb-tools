@@ -70,7 +70,7 @@ func executeSQL(conn *Conn, sqls []string, enableRetry bool, skipConstraintCheck
 			skipConstraintCheck = false
 		}
 		if err = executeSQLImp(conn.db, sqls, skipConstraintCheck); err != nil {
-			if !isErrDupEntry(err) {
+			if isRetryableError(err) {
 				continue
 			}
 		}
@@ -261,10 +261,20 @@ func isErrTableExists(err error) bool {
 	return false
 }
 
-func isErrDupEntry(err error) bool {
+func isRetryableError(err error) bool {
 	err = causeErr(err)
-	if e, ok := err.(*mysql.MySQLError); ok && e.Number == tmysql.ErrDupEntry {
+
+	e, ok := err.(*mysql.MySQLError)
+	if !ok {
 		return true
 	}
-	return false
+	// cases not retryable
+	switch e.Number {
+	case tmysql.ErrDupEntry:
+		return false
+	case tmysql.ErrDataTooLong:
+		return false
+	}
+
+	return true
 }
