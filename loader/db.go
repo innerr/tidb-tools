@@ -246,35 +246,27 @@ func closeConns(conns ...*Conn) {
 }
 
 func isErrDBExists(err error) bool {
-	err = causeErr(err)
-	if e, ok := err.(*mysql.MySQLError); ok && e.Number == tmysql.ErrDBCreateExists {
-		return true
-	}
-	return false
+	return isMySQLError(err, tmysql.ErrDBCreateExists)
 }
 
 func isErrTableExists(err error) bool {
-	err = causeErr(err)
-	if e, ok := err.(*mysql.MySQLError); ok && e.Number == tmysql.ErrTableExists {
-		return true
-	}
-	return false
+	return isMySQLError(err, tmysql.ErrTableExists)
 }
 
 func isRetryableError(err error) bool {
-	err = causeErr(err)
+	if isMySQLError(err, tmysql.ErrDupEntry) {
+		return false
+	}
+	if isMySQLError(err, tmysql.ErrDataTooLong) {
+		return false
+	}
+	return true
+}
 
-	e, ok := err.(*mysql.MySQLError)
-	if !ok {
+func isMySQLError(err error, code uint16) bool {
+	err = causeErr(err)
+	if e, ok := err.(*mysql.MySQLError); ok && e.Number == code {
 		return true
 	}
-	// cases not retryable
-	switch e.Number {
-	case tmysql.ErrDupEntry:
-		return false
-	case tmysql.ErrDataTooLong:
-		return false
-	}
-
-	return true
+	return false
 }
