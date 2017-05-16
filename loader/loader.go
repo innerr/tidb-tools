@@ -433,7 +433,7 @@ func (l *Loader) prepare() error {
 	return l.prepareDataFiles(files)
 }
 
-func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string, table string) error {
+func (l *Loader) restoreSchema(conn *Conn, sqlFile string, srcSchema string, alterSchema string, table string) error {
 	f, err := os.Open(sqlFile)
 	if err != nil {
 		return errors.Trace(err)
@@ -461,13 +461,16 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string, table 
 				}
 
 				var sqls []string
-				dstSchema, dstTable := fetchMatchedLiteral(l.tableRouter, schema, table)
-				// for table
-				if table != "" {
-					sqls = append(sqls, fmt.Sprintf("use %s;", dstSchema))
-					query = renameShardingTable(query, table, dstTable)
-				} else {
-					query = renameShardingSchema(query, schema, dstSchema)
+				if srcSchema != "" && alterSchema != "" && table == "" {
+					query = renameShardingSchema(query, srcSchema, alterSchema)
+				}else {
+						dstSchema, dstTable := fetchMatchedLiteral(l.tableRouter, alterSchema, table)
+	 					if srcSchema == "" && alterSchema != ""  && table == "" {
+							query = renameShardingSchema(query, alterSchema, dstSchema)
+						}else if srcSchema == "" && alterSchema != ""  && table != "" {
+							sqls = append(sqls, fmt.Sprintf("use %s;", dstSchema))
+							query = renameShardingTable(query, table, dstTable)
+						}
 				}
 
 				log.Debugf("query:%s", query)
@@ -542,11 +545,26 @@ func (l *Loader) restoreData() error {
 		return errors.Trace(err)
 	}
 
+	// set alternative db tirgger is flase
+	var alternativeTrigger bool
 	// restore db in sort
 	dbs := make([]string, 0, len(l.db2Tables))
-	for db := range l.db2Tables {
-		dbs = append(dbs, db)
+	if l.cfg.SourceDb != "" && l.cfg.AlternativeDb != "" {
+		_,ok := l.db2Tables[ l.cfg.SourceDb ]
+		if ! ok {
+			log.Fatalf("run db schema failed - can not find database files %s", l.cfg.SourceDb)
+		}
+		alternativeTrigger = true
+		dbs = append(dbs, l.cfg.SourceDb)
+
+	}else if l.cfg.AlternativeDb == "" || l.cfg.SourceDb == "" {
+		log.Fatalf("run db schema failed - must set both source-db and alternative-db, not null")
+	}else{
+		for db := range l.db2Tables {
+			dbs = append(dbs, db)
+		}
 	}
+
 	sort.Strings(dbs)
 	for _, db := range dbs {
 		tables := l.db2Tables[db]
@@ -554,7 +572,14 @@ func (l *Loader) restoreData() error {
 		// create db
 		dbFile := fmt.Sprintf("%s/%s-schema-create.sql", l.cfg.Dir, db)
 		log.Infof("[loader][run db schema]%s[start]", dbFile)
-		err = l.restoreSchema(conn, dbFile, db, "")
+		srcdb := db
+		if alternativeTrigger {
+			// if alternativedb trigger is open,set value db to alternativedb
+			db = l.cfg.AlternativeDb
+			err = l.restoreSchema(conn, dbFile, srcdb, db, "")
+		}else{
+			err = l.restoreSchema(conn, dbFile, "", db, "")
+		}
 		if err != nil {
 			if isErrDBExists(err) {
 				log.Infof("[loader][database already exists, skip]%s", dbFile)
@@ -573,15 +598,15 @@ func (l *Loader) restoreData() error {
 		for _, table := range tnames {
 			dataFiles := tables[table]
 
-			if l.checkPoint.IsTableFinished(db, table) {
-				log.Infof("table (%s.%s) has finished, skip.", db, table)
+			if l.checkPoint.IsTableFinished(srcdb, table) {
+				log.Infof("table (%s.%s) has finished, skip.", srcdb, table)
 				continue
 			}
 
 			// create table
 			tableExist := false
-			tableFile := fmt.Sprintf("%s/%s.%s-schema.sql", l.cfg.Dir, db, table)
-			err := l.restoreSchema(conn, tableFile, db, table)
+			tableFile := fmt.Sprintf("%s/%s.%s-schema.sql", l.cfg.Dir, srcdb, table)
+			err := l.restoreSchema(conn, tableFile, "", db, table)
 			if err != nil {
 				if isErrTableExists(err) {
 					log.Infof("[loader][table already exists, skip]%s", tableFile)
@@ -598,7 +623,7 @@ func (l *Loader) restoreData() error {
 				log.Fatalf("check unique index failed. err: %v", err)
 			}
 
-			restoredFiles := l.checkPoint.GetRestoredFiles(db, table)
+			restoredFiles := l.checkPoint.GetRestoredFiles(srcdb, table)
 
 			// if partial data has restored for table that not have unique index, we must truncate the table
 			// and restart from the very begin.

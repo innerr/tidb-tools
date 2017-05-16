@@ -22,6 +22,11 @@ batch = 1000
 # Skip unique index check
 skip-unique-check = 0
 
+# An alternative database to restore into
+#alternative-db = ""
+# Database to restore
+#source-db = ""
+
 # DB config
 [db]
 host = "127.0.0.1"
