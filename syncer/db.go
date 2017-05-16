@@ -247,7 +247,7 @@ func genInsertSQLs(schema string, table string, dataSeq [][]interface{}, columns
 		}
 
 		sql := fmt.Sprintf("REPLACE INTO `%s`.`%s` (%s) VALUES (%s);", schema, table, columnList, columnPlaceholders)
-		ks := getMultipleKeys(columns, value, indexColumns)
+		ks := genMultipleKeys(columns, value, indexColumns)
 		sqls = append(sqls, sql)
 		values = append(values, value)
 		keys = append(keys, ks)
@@ -256,7 +256,7 @@ func genInsertSQLs(schema string, table string, dataSeq [][]interface{}, columns
 	return sqls, keys, values, nil
 }
 
-func getMultipleKeys(columns []*column, value []interface{}, indexColumns map[string][]*column) []string {
+func genMultipleKeys(columns []*column, value []interface{}, indexColumns map[string][]*column) []string {
 	var multipleKeys []string
 	for _, indexCols := range indexColumns {
 		cols, vals := getColumnData(columns, indexCols, value)
@@ -344,12 +344,12 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 			changedValues = append(changedValues, castUnsigned(changedData[i], columns[i].unsigned))
 		}
 
-		ks := getMultipleKeys(columns, oldValues, indexColumns)
-		ks = append(ks, getMultipleKeys(columns, changedValues, indexColumns)...)
+		ks := genMultipleKeys(columns, oldValues, indexColumns)
+		ks = append(ks, genMultipleKeys(columns, changedValues, indexColumns)...)
 
 		if safeModel {
 			// generate delete sql from old data
-			sql, value := getDeleteSQL(schema, table, oldValues, columns, defaultIndexColumn)
+			sql, value := genDeleteSQL(schema, table, oldValues, columns, defaultIndexColumn)
 			sqls = append(sqls, sql)
 			values = append(values, value)
 			keys = append(keys, ks)
@@ -412,9 +412,9 @@ func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns
 			value = append(value, castUnsigned(data[i], columns[i].unsigned))
 		}
 
-		ks := getMultipleKeys(columns, value, indexColumns)
+		ks := genMultipleKeys(columns, value, indexColumns)
 
-		sql, value := getDeleteSQL(schema, table, value, columns, defaultIndexColumn)
+		sql, value := genDeleteSQL(schema, table, value, columns, defaultIndexColumn)
 		sqls = append(sqls, sql)
 		values = append(values, value)
 		keys = append(keys, ks)
@@ -423,7 +423,7 @@ func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns
 	return sqls, keys, values, nil
 }
 
-func getDeleteSQL(schema string, table string, value []interface{}, columns []*column, indexColumns []*column) (string, []interface{}) {
+func genDeleteSQL(schema string, table string, value []interface{}, columns []*column, indexColumns []*column) (string, []interface{}) {
 	whereColumns, whereValues := columns, value
 	if len(indexColumns) > 0 {
 		whereColumns, whereValues = getColumnData(columns, indexColumns, value)
