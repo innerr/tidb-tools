@@ -64,7 +64,7 @@ type Syncer struct {
 
 	done chan struct{}
 	jobs []chan *job
-	keys karma
+	k    *karma
 
 	closed sync2.AtomicBool
 
@@ -93,7 +93,7 @@ func NewSyncer(cfg *Config) *Syncer {
 	syncer.done = make(chan struct{})
 	syncer.jobs = newJobChans(cfg.WorkerCount + 1)
 	syncer.tables = make(map[string]*table)
-	syncer.keys = make(map[string]string)
+	syncer.k = newKarma()
 	syncer.ctx, syncer.cancel = context.WithCancel(context.Background())
 	syncer.patternMap = make(map[string]*regexp.Regexp)
 	return syncer
@@ -450,7 +450,7 @@ func (s *Syncer) addJob(job *job) error {
 	wait := s.checkWait(job)
 	if wait {
 		s.jobWg.Wait()
-		s.keys.Reset()
+		s.k.reset()
 	}
 
 	err := s.meta.Save(job.pos, "", "", wait)
@@ -810,20 +810,20 @@ func (s *Syncer) run() (err error) {
 }
 
 func (s *Syncer) resolveKarma(keys []string) (string, error) {
-	if s.keys.DetectConflict(keys) {
+	if s.k.detectConflict(keys) {
 		if err := s.flushJobs(); err != nil {
 			return "", errors.Trace(err)
 		}
-		s.keys.Reset()
+		s.k.reset()
 	}
-	if err := s.keys.Add(keys); err != nil {
+	if err := s.k.add(keys); err != nil {
 		return "", errors.Trace(err)
 	}
 	var key string
 	if len(keys) > 0 {
 		key = keys[0]
 	}
-	return s.keys.Get(key), nil
+	return s.k.get(key), nil
 }
 
 func (s *Syncer) genRegexMap() {

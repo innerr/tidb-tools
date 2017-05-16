@@ -15,23 +15,31 @@ package main
 
 import "github.com/juju/errors"
 
-type karma map[string]string
+type karma struct {
+	k map[string]string
+}
 
-// Add adds key
-// make sure detecting conflict before call Add
-func (k karma) Add(keys []string) error {
+func newKarma() *karma {
+	return &karma{
+		k: make(map[string]string),
+	}
+}
+
+// add adds key
+// make sure to resolve conflict before call Add
+func (k *karma) add(keys []string) error {
 	if len(keys) == 0 {
 		return nil
 	}
 
-	if k.DetectConflict(keys) {
+	if k.detectConflict(keys) {
 		return errors.New("some conflict in karma")
 	}
 	// find karma key
 	selectedKarma := keys[0]
 	var nonExistKeys []string
 	for _, key := range keys {
-		if val, ok := k[key]; ok {
+		if val, ok := k.k[key]; ok {
 			selectedKarma = val
 		} else {
 			nonExistKeys = append(nonExistKeys, key)
@@ -39,28 +47,28 @@ func (k karma) Add(keys []string) error {
 	}
 	// set karma for those non exist key
 	for _, key := range nonExistKeys {
-		k[key] = selectedKarma
+		k.k[key] = selectedKarma
 	}
 	return nil
 }
 
-func (k karma) Get(key string) string {
-	return k[key]
+func (k *karma) get(key string) string {
+	return k.k[key]
 }
 
-func (k karma) Reset() {
-	k = make(map[string]string)
+func (k *karma) reset() {
+	k.k = make(map[string]string)
 }
 
-// detectConflict detect whether there is a conflict
-func (k karma) DetectConflict(keys []string) bool {
+// detectConflict detects whether there is a conflict
+func (k *karma) detectConflict(keys []string) bool {
 	if len(keys) == 0 {
 		return false
 	}
 
 	var existedKarma string
 	for _, key := range keys {
-		if val, ok := k[key]; ok {
+		if val, ok := k.k[key]; ok {
 			if existedKarma != "" && val != existedKarma {
 				return true
 			}
