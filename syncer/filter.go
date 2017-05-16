@@ -14,18 +14,45 @@ var (
 		// For mariadb, for query event, like `# Dumm`
 		// But i don't know what is the meaning of this event.
 		"^#",
-		"^GRANT",
-		"^REVOKE",
-		"^FLUSH\\s+PRIVILEGES",
+
+		// transaction
 		"^SAVEPOINT",
+
+		// skip all flush sqls
+		"^FLUSH",
+
+		// table maintenance
 		"^OPTIMIZE\\s+TABLE",
+		"^ANALYZE\\s+TABLE",
+		"^REPAIR\\s+TABLE",
+
+		//trigger
+		"^CREATE\\s+TRIGGER",
 		"^DROP\\s+TRIGGER",
+
+		//procedure
+		"^DROP\\s+PROCEDURE",
+		"^CREATE\\s+PROCEDURE",
+		"^ALTER\\s+PROCEDURE",
+
+		//view
 		"^CREATE\\s+VIEW",
 		"^DROP\\s+VIEW",
-		"^CREATE\\s+ALGORITHM",
-		"^DROP\\s+USER",
-		"^ALTER\\s+USER",
+		"^ALTER\\s+VIEW",
+
+		//function
+		"^CREATE\\s+FUNCTION",
+		"^ALTER\\s+FUNCTION",
+		"^DROP\\s+FUNCTION",
+
+		// account management
+		"^GRANT",
+		"^REVOKE",
 		"^CREATE\\s+USER",
+		"^ALTER\\s+USER",
+		"^RENAME\\s+USER",
+		"^DROP\\s+USER",
+		"^SET\\s+PASSWORD",
 	}
 	skipPatterns *regexp.Regexp
 )

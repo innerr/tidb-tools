@@ -105,7 +105,6 @@ func initStatusAndMetrics(addr string) {
 func getBinlogIndex(filename string) float64 {
 	spt := strings.Split(filename, ".")
 	if len(spt) == 1 {
-		log.Warnf("[syncer] invalid binlog file: %s", filename)
 		return 0
 	}
 	idxStr := spt[len(spt)-1]
