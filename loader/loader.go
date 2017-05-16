@@ -462,14 +462,15 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, srcSchema string, alt
 
 				var sqls []string
 				if srcSchema != "" && alterSchema != "" && table == "" {
+					// alternative-db/source-db are set, rename db name
 					query = renameShardingSchema(query, srcSchema, alterSchema)
 				}else {
 						dstSchema, dstTable := fetchMatchedLiteral(l.tableRouter, alterSchema, table)
-	 					if srcSchema == "" && alterSchema != ""  && table == "" {
-							query = renameShardingSchema(query, alterSchema, dstSchema)
-						}else if srcSchema == "" && alterSchema != ""  && table != "" {
+						if table != "" {
 							sqls = append(sqls, fmt.Sprintf("use %s;", dstSchema))
-							query = renameShardingTable(query, table, dstTable)
+							query = renameShardingTable(query, table, dstTable)					
+						}else {
+							query = renameShardingSchema(query, alterSchema, dstSchema)
 						}
 				}
 
