@@ -280,7 +280,7 @@ func getColumnData(columns []*column, indexColumns []*column, data []interface{}
 	values := make([]interface{}, 0, len(columns))
 	for _, column := range indexColumns {
 		cols = append(cols, column)
-		values = append(values, castUnsigned(data[column.idx], column.unsigned))
+		values = append(values, data[column.idx])
 	}
 
 	return cols, values
@@ -407,15 +407,14 @@ func genDeleteSQLs(schema string, table string, dataSeq [][]interface{}, columns
 			return nil, nil, nil, errors.Errorf("delete columns and data mismatch in length: %d vs %d", len(columns), len(data))
 		}
 
-		values := make([]interface{}, 0, len(data))
+		value := make([]interface{}, 0, len(data))
 		for i := range data {
-			values = append(values, castUnsigned(data[i], columns[i].unsigned))
+			value = append(value, castUnsigned(data[i], columns[i].unsigned))
 		}
 
-		ks := getMultipleKeys(columns, values, indexColumns)
-		ks = append(ks, getMultipleKeys(columns, values, indexColumns)...)
+		ks := getMultipleKeys(columns, value, indexColumns)
 
-		sql, value := getDeleteSQL(schema, table, data, columns, defaultIndexColumn)
+		sql, value := getDeleteSQL(schema, table, value, columns, defaultIndexColumn)
 		sqls = append(sqls, sql)
 		values = append(values, value)
 		keys = append(keys, ks)
@@ -433,7 +432,7 @@ func getDeleteSQL(schema string, table string, value []interface{}, columns []*c
 	where := genWhere(whereColumns, whereValues)
 	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s LIMIT 1;", schema, table, where)
 
-	return sql, value
+	return sql, whereValues
 }
 
 func ignoreDDLError(err error) bool {

@@ -33,7 +33,6 @@ func (k karma) Add(keys []string) error {
 	for _, key := range keys {
 		if val, ok := k[key]; ok {
 			selectedKarma = val
-			break
 		} else {
 			nonExistKeys = append(nonExistKeys, key)
 		}
@@ -62,7 +61,7 @@ func (k karma) DetectConflict(keys []string) bool {
 	var existedKarma string
 	for _, key := range keys {
 		if val, ok := k[key]; ok {
-			if len(existedKarma) > 0 {
+			if existedKarma != "" && val != existedKarma {
 				return true
 			}
 			existedKarma = val
