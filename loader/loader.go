@@ -24,6 +24,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
+	"github.com/pingcap/tidb-tools/pkg/tableroute"
 )
 
 var (
@@ -63,10 +64,12 @@ type WorkerPool struct {
 	conns      []*Conn
 	wg         sync.WaitGroup
 	JobQueue   chan *dataJob
+
+	tableRouter route.TableRouter
 }
 
 // NewWorkerPool returns a WorkerPool.
-func NewWorkerPool(cfg *Config, checkPoint *CheckPoint) (*WorkerPool, error) {
+func NewWorkerPool(cfg *Config, checkPoint *CheckPoint, tableRouter route.TableRouter) (*WorkerPool, error) {
 	pool := new(WorkerPool)
 	pool.cfg = cfg
 	pool.checkPoint = checkPoint
@@ -76,6 +79,8 @@ func NewWorkerPool(cfg *Config, checkPoint *CheckPoint) (*WorkerPool, error) {
 	}
 	pool.conns = conns
 	pool.JobQueue = make(chan *dataJob, jobCount)
+
+	pool.tableRouter = tableRouter
 
 	return pool, nil
 }
@@ -184,9 +189,15 @@ func (p *WorkerPool) dispatchSQL(file, schema, table string, checkExist bool) er
 					sql = query
 				}
 
+				_, dstTable := fetchMatchedLiteral(p.tableRouter, schema, table)
+				sql = renameShardingTable(sql, table, dstTable)
+				log.Debugf("sql: %-.100v", sql)
+
+				targetSchema, _ := fetchMatchedLiteral(p.tableRouter, schema, table)
+
 				j := &dataJob{
 					sql:                 sql,
-					schema:              schema,
+					schema:              targetSchema,
 					skipConstraintCheck: p.cfg.SkipConstraintCheck == 1,
 				}
 				if checkExist {
@@ -219,6 +230,8 @@ type Loader struct {
 	tableJobWg    *sync.WaitGroup
 	tableJobQueue chan *tableJob
 
+	tableRouter route.TableRouter
+
 	pools []*WorkerPool
 }
 
@@ -238,6 +251,11 @@ func NewLoader(cfg *Config) *Loader {
 
 // Restore begins the restore process.
 func (l *Loader) Restore() error {
+	err := l.genRouter(l.cfg.RouteRules)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
 	if err := l.prepare(); err != nil {
 		log.Errorf("[loader] scan dir[%s] failed, err[%v]", l.cfg.Dir, err)
 		return errors.Trace(err)
@@ -265,9 +283,22 @@ func (l *Loader) Restore() error {
 	return nil
 }
 
+func (l *Loader) genRouter(rules []*RouteRule) error {
+	l.tableRouter = route.NewTrieRouter()
+
+	for _, rule := range rules {
+		err := l.tableRouter.Insert(rule.PatternSchema, rule.PatternTable, rule.TargetSchema, rule.TargetTable)
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
+	log.Debugf("table_router rules:%+v", l.tableRouter.AllRules())
+	return nil
+}
+
 func (l *Loader) initAndStartWorkerPools() error {
 	for i := 0; i < l.cfg.PoolCount; i++ {
-		pool, err := NewWorkerPool(l.cfg, l.checkPoint)
+		pool, err := NewWorkerPool(l.cfg, l.checkPoint, l.tableRouter)
 		if err != nil {
 			return err
 		}
@@ -380,6 +411,8 @@ func (l *Loader) prepare() error {
 		return errors.New("invalid mydumper dir, none metadata exists")
 	}
 
+	log.Debugf("collected files:%+v", files)
+
 	/* Mydumper file names format
 	 * db    {db}-schema-create.sql
 	 * table {db}.{table}-schema.sql
@@ -400,7 +433,7 @@ func (l *Loader) prepare() error {
 	return l.prepareDataFiles(files)
 }
 
-func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string) error {
+func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string, table string) error {
 	f, err := os.Open(sqlFile)
 	if err != nil {
 		return errors.Trace(err)
@@ -428,9 +461,16 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string) error 
 				}
 
 				var sqls []string
-				if len(schema) > 0 {
-					sqls = append(sqls, fmt.Sprintf("use %s;", schema))
+				dstSchema, dstTable := fetchMatchedLiteral(l.tableRouter, schema, table)
+				// for table
+				if table != "" {
+					sqls = append(sqls, fmt.Sprintf("use %s;", dstSchema))
+					query = renameShardingTable(query, table, dstTable)
+				} else {
+					query = renameShardingSchema(query, schema, dstSchema)
 				}
+
+				log.Debugf("query:%s", query)
 
 				sqls = append(sqls, query)
 				err = executeSQL(conn, sqls, false, false)
@@ -442,6 +482,39 @@ func (l *Loader) restoreSchema(conn *Conn, sqlFile string, schema string) error 
 	}
 
 	return nil
+}
+
+// renameShardingTable replaces srcTable with dstTable in query
+func renameShardingTable(query, srcTable, dstTable string) string {
+	return SQLReplace(query, srcTable, dstTable)
+}
+
+// renameShardingSchema replaces srcSchema with dstSchema in query
+func renameShardingSchema(query, srcSchema, dstSchema string) string {
+	return SQLReplace(query, srcSchema, dstSchema)
+}
+
+func fetchMatchedLiteral(router route.TableRouter, schema, table string) (targetSchema string, targetTable string) {
+	schema, table = toLower(schema, table)
+	if schema == "" {
+		// nothing change
+		return schema, table
+	}
+	targetSchema, targetTable = router.Match(schema, table)
+	if targetSchema == "" {
+		// nothing change
+		return schema, table
+	}
+	if targetTable == "" {
+		// table still same;
+		targetTable = table
+	}
+
+	return targetSchema, targetTable
+}
+
+func toLower(schema, table string) (string, string) {
+	return strings.ToLower(schema), strings.ToLower(table)
 }
 
 func causeErr(err error) error {
@@ -481,7 +554,7 @@ func (l *Loader) restoreData() error {
 		// create db
 		dbFile := fmt.Sprintf("%s/%s-schema-create.sql", l.cfg.Dir, db)
 		log.Infof("[loader][run db schema]%s[start]", dbFile)
-		err = l.restoreSchema(conn, dbFile, "")
+		err = l.restoreSchema(conn, dbFile, db, "")
 		if err != nil {
 			if isErrDBExists(err) {
 				log.Infof("[loader][database already exists, skip]%s", dbFile)
@@ -508,7 +581,7 @@ func (l *Loader) restoreData() error {
 			// create table
 			tableExist := false
 			tableFile := fmt.Sprintf("%s/%s.%s-schema.sql", l.cfg.Dir, db, table)
-			err := l.restoreSchema(conn, tableFile, db)
+			err := l.restoreSchema(conn, tableFile, db, table)
 			if err != nil {
 				if isErrTableExists(err) {
 					log.Infof("[loader][table already exists, skip]%s", tableFile)
@@ -520,7 +593,7 @@ func (l *Loader) restoreData() error {
 			log.Infof("[loader][run table schema]%s[finished]", tableFile)
 
 			// check if has unique index
-			hasUniqIdx, err := hasUniqIndex(conn, db, table)
+			hasUniqIdx, err := hasUniqIndex(conn, db, table, l.tableRouter)
 			if err != nil {
 				log.Fatalf("check unique index failed. err: %v", err)
 			}
@@ -530,7 +603,7 @@ func (l *Loader) restoreData() error {
 			// if partial data has restored for table that not have unique index, we must truncate the table
 			// and restart from the very begin.
 			if tableExist && !hasUniqIdx {
-				err = truncateTable(conn, db, table)
+				err = truncateTable(conn, db, table, l.tableRouter)
 				if err != nil {
 					log.Fatalf("truncate table (%s.%s) failed, err: %v", db, table, err)
 				}
@@ -545,6 +618,9 @@ func (l *Loader) restoreData() error {
 				if endPos > len(dataFiles) {
 					endPos = len(dataFiles)
 				}
+
+				log.Debugf("dispatch table job. schema:%s, table:%s, files:%+v", db, table, dataFiles)
+				log.Debugf("restored files:%+v", restoredFiles)
 
 				j := &tableJob{
 					schema:        db,

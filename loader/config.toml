@@ -28,3 +28,12 @@ host = "127.0.0.1"
 user = "root"
 password = ""
 port = 4000
+
+
+[[route-rules]]
+pattern-schema = "shard_db_*"
+pattern-table = "shard_table_*"
+target-schema = "shard_db"
+target-table = "shard_table"
+
+
