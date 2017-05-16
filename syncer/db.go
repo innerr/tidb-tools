@@ -361,13 +361,14 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 			continue
 		}
 
-		updateColumns := make([]*column, 0, len(indexColumns))
+		updateColumns := make([]*column, 0, len(defaultIndexColumn))
+		updateValues := make([]interface{}, 0, len(defaultIndexColumn))
 		for j := range oldValues {
 			if reflect.DeepEqual(oldValues[j], changedValues[j]) {
 				continue
 			}
 			updateColumns = append(updateColumns, columns[j])
-			changedValues = append(changedValues, changedValues[j])
+			updateValues = append(updateValues, changedValues[j])
 		}
 
 		// ignore no changed sql
@@ -377,7 +378,7 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 
 		value := make([]interface{}, 0, len(oldData))
 		kvs := genKVs(updateColumns)
-		value = append(value, changedValues...)
+		value = append(value, updateValues...)
 
 		whereColumns, whereValues := columns, oldValues
 		if len(defaultIndexColumn) > 0 {
