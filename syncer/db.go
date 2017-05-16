@@ -336,11 +336,11 @@ func genUpdateSQLs(schema string, table string, data [][]interface{}, columns []
 		}
 
 		oldValues := make([]interface{}, 0, len(oldData))
-		for i := range data {
+		for i := range oldData {
 			oldValues = append(oldValues, castUnsigned(oldData[i], columns[i].unsigned))
 		}
 		changedValues := make([]interface{}, 0, len(changedData))
-		for i := range data {
+		for i := range changedData {
 			changedValues = append(changedValues, castUnsigned(changedData[i], columns[i].unsigned))
 		}
 
